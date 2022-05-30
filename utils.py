@@ -4,6 +4,8 @@ from sklearn.linear_model import LinearRegression
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.utils._testing import ignore_warnings
+from sklearn.exceptions import ConvergenceWarning
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
@@ -28,6 +30,14 @@ MODELS = {"log_reg": LogisticRegression(random_state=0, max_iter=500),
                "rf_cont": RandomForestRegressor(max_depth=4, random_state=0)}
 
 IMPUTATIONS = ["cca", "mean", "mice_reg", "mice_def", "reg"]
+
+SAVEPATH = "experiments/"
+
+font = {'family' : 'normal',
+        'weight' : 'bold',
+        'size'   : 22}
+
+plt.rc('font', **font)
 
 
 def save(stem, filepath, data):
@@ -76,7 +86,14 @@ def predictive_parity(pred, prot, true):
         pred, prot, true) if z == 1 and y == 1 and y_hat == 1]
     z0_yhat1 = [y for y_hat, z, y in zip(
         pred, prot, true) if z == 0 and y == 1 and y_hat == 1]
-    return abs(sum(z1_yhat1)/len(z1_yhat1)-sum(z0_yhat1)/len(z0_yhat1))
+    try:
+        z1 = sum(z1_yhat1)/len(z1_yhat1)
+        z0 = sum(z0_yhat1)/len(z0_yhat1)
+        return abs(z1-z0)
+    except Exception as e:
+        print("Exception is: ", e)
+        return 0
+    
 
 def confusion_matrix(true, pred):
     # Assumes numpy arrays(
@@ -105,6 +122,8 @@ def spd(pred, protected_class):
     """Assumes z is 0/1 binary"""
     z_1 = [y for y, z in zip(pred, np.array(protected_class)) if z == 1]
     z_0 = [y for y, z in zip(pred, np.array(protected_class)) if z == 0]
+    if len(z_1)+len(z_0)!=len(pred):
+        print("NOT EQUAL")
     return abs(sum(z_1)/len(z_1)-sum(z_0)/len(z_0))
 
 
@@ -128,7 +147,13 @@ def predictive_parity(pred, prot, true):
         pred, prot, true) if z == 1 and y == 1 and y_hat == 1]
     z0_yhat1 = [y for y_hat, z, y in zip(
         pred, prot, true) if z == 0 and y == 1 and y_hat == 1]
-    return abs(sum(z1_yhat1)/len(z1_yhat1)-sum(z0_yhat1)/len(z0_yhat1))
+    try:
+        z1 = sum(z1_yhat1)/len(z1_yhat1)
+        z0 = sum(z0_yhat1)/len(z0_yhat1)
+        return abs(z1-z0)
+    except Exception as e:
+        #print("Exception: ", e)
+        return 0
 
 
 def data_remover_cat(full_data, missing_col, missing_pct, missing="mar"):
@@ -174,7 +199,7 @@ def regression_imputer(full_data, missing):
     else:
         pass
 
-
+@ignore_warnings(category=ConvergenceWarning)
 def impute(dataframe, missing_col, impute="cca"):
     data = dataframe.copy()
     if impute == "cca":
@@ -213,8 +238,10 @@ def impute(dataframe, missing_col, impute="cca"):
             data = pd.DataFrame(imputer.transform(data), columns=data.columns)
     return data
 
-
-def test_bench(train, test, pred: str, missing: str, sensitive: str, pred_var_type: str = "cat"):
+#TODO Note down overall accuracy scores in a json.
+@ignore_warnings(category=ConvergenceWarning)
+def test_bench(train, test, pred: str, missing: str, sensitive: str, pred_var_type: str = "cat",
+    percentiles = None):
 
     # sensitive var
     class_0_test = test[test[sensitive] == 0]
@@ -223,7 +250,8 @@ def test_bench(train, test, pred: str, missing: str, sensitive: str, pred_var_ty
     # print("class_0",sum(class_0_test[pred]))
     # print("class_1",sum(class_1_test[pred]))
     results = {}
-    percentiles = [i for i in range(1, 16)]+[j for j in range(20, 100, 10)]
+    if percentiles is None:
+        percentiles = [i for i in range(1, 16)]+[j for j in range(20, 100, 10)]
 
     # TODO add xgboost, neural network
     if pred_var_type == "cat":
@@ -295,7 +323,10 @@ def test_bench(train, test, pred: str, missing: str, sensitive: str, pred_var_ty
     return results
 
 
+#TODO Add filename thingy
 def plotting_cf(models, correctives, results):
+    if not os.path.isdir(Path(SAVEPATH)):
+        os.mkdir(Path(SAVEPATH))
     for m in models:
         for c in correctives:
             tpr_mar = {"0": {}, "1": {}}
@@ -329,6 +360,8 @@ def plotting_cf(models, correctives, results):
                     except Exception as e:
                         print("key", key, "exception", e)
             tpr_mar = collections.OrderedDict(sorted(tpr_mar.items()))
+
+            #TODO add thing that makes plots bigger
             plt.plot(list(tpr_mar["0"].keys()), list(
                 tpr_mar["0"].values()), label=m+"TPR MAR class 0")
             plt.plot(list(tnr_mar["0"].keys()), list(
@@ -342,7 +375,8 @@ def plotting_cf(models, correctives, results):
             plt.ylabel("Accuracy")
             plt.ylim(0.0, 1.01)
             plt.legend()
-            plt.show()
+            plt.savefig(Path(SAVEPATH+m+"_"+c+"_MAR.png"))
+            plt.clf()
 
             plt.plot(list(tpr_mcar["0"].keys()), list(
                 tpr_mcar["0"].values()), label=m+"TPR MCAR class 0")
@@ -357,10 +391,13 @@ def plotting_cf(models, correctives, results):
             plt.ylabel("Accuracy")
             plt.ylim(0.0, 1.01)
             plt.legend()
-            plt.show()
+            plt.savefig(Path(SAVEPATH+m+"_"+c+"_MCAR.png"))
+            plt.clf()
 
 
 def plotting_others(results):
+    if not os.path.isdir(Path(SAVEPATH)):
+        os.mkdir(Path(SAVEPATH))
     for missingness, data in results.items():
         if missingness != "mar" and missingness != "mcar":
             continue
@@ -369,10 +406,29 @@ def plotting_others(results):
                 for imputation, vals in imps.items():
                     if len(vals) == 0:
                         continue
-                    plt.plot(list(results["percentiles"]), list(
-                        vals), label=model+"_"+imputation)
-                    plt.title(model+"_"+imputation+"_"+metric+"_"+missingness)
-                    plt.xlabel("Missingness percent")
-                    plt.ylabel(metric)
-                    plt.legend()
-                plt.show()
+                    if isinstance(vals[0], dict):
+                        y_0 = np.zeros(len(vals))
+                        y_1 = np.zeros(len(vals))
+
+                        for i,dictio in enumerate(vals):
+                            y_0[i] = dictio["Y=0"]
+                            y_1[i] = dictio["Y=1"]
+                        plt.plot(list(results["percentiles"]), list(
+                        y_0), label=model+"_"+imputation+"Y=0")
+                        plt.plot(list(results["percentiles"]), list(
+                        y_1), label=model+"_"+imputation+"Y=1")
+                        plt.title(model+"_"+imputation+"_"+metric+"_"+missingness)
+                        plt.xlabel("Missingness percent")
+                        plt.ylabel(metric)
+                        plt.legend()
+                        
+
+                    else:
+                        plt.plot(list(results["percentiles"]), list(
+                            vals), label=model+"_"+imputation)
+                        plt.title(model+"_"+imputation+"_"+metric+"_"+missingness)
+                        plt.xlabel("Missingness percent")
+                        plt.ylabel(metric)
+                        plt.legend()
+                plt.savefig(Path(SAVEPATH+model+"_"+imputation+"_"+metric+"_"+missingness+".png"))
+                plt.clf()
