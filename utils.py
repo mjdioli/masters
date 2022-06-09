@@ -51,7 +51,7 @@ def save(stem, filepath, data):
         pass
     elif filepath.split(".")[-1] == "json":
         with open(Path(stem+filepath), 'w') as f:
-            json.dump(data, f)
+            json.dump(data, f, indent=1)
     elif filepath.split(".")[-1] == "pickle":
         with open(Path(stem+filepath), 'wb') as f:
             pickle.dump(data, f)
@@ -61,7 +61,7 @@ def sigmoid(x, alpha):
     sig = 1 / (1 + z)
     return sig
 
-def splitter(data, response= "score_text"):
+def splitter(data, response= "score_factor"):
     x = data.drop(response, axis = 1)
     y = data[response]
     x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.33, random_state=42)
@@ -69,12 +69,27 @@ def splitter(data, response= "score_text"):
     x_test[response]=y_test
     return {"train":x_train, "test": x_test}
 
+def load_compas_alt():
+    cols = ["score_factor", "gender_factor", "age_factor", "race_factor",
+        "priors_count", "crime_factor", "two_year_recid"]
+    new_df = pd.read_csv("./formatted_recid.csv", usecols=cols)
+    new_df["is_Caucasian"] = new_df["race_factor"].apply(lambda x: 1 if x=="Caucasian" else 0)
+    new_df["score_factor"] = new_df["score_factor"].apply(lambda x: 0 if x=="LowScore" else 1)
+    new_df["gender_factor"] = new_df["gender_factor"].apply(lambda x: 1 if x=="Male" else 0)
+    new_df["crime_factor"] = new_df["crime_factor"].apply(lambda x: 0 if x=="F" else 1)
+    new_df = new_df.drop("race_factor", axis = 1)
+    new_df = pd.get_dummies(new_df, 
+                            columns = ["age_factor"],
+                            drop_first=True)
+    return splitter(new_df)
+
 def compas_cleaning(df):
     new_df = df.dropna()
     new_df = new_df[(new_df["days_b_screening_arrest"]<=30)&
                     (new_df["days_b_screening_arrest"]>=-30)&
                     (new_df["is_recid"]!=-1)&
-                    (new_df["c_charge_degree"]!="O")]
+                    (new_df["c_charge_degree"]!="O")&
+                    (new_df["score_text"]!= "N/A")]
     new_df["length_of_stay"] = ((pd.to_datetime(df["c_jail_out"])-pd.to_datetime(df["c_jail_in"])).dt.days)
     new_df["length_of_stay"] = new_df["length_of_stay"].astype(int)
     
@@ -89,6 +104,12 @@ def compas_cleaning(df):
                                         "age_cat",
                                         "sex"],
                             drop_first=True)
+    col_names = new_df.columns
+    for i in range(len(col_names)):
+        if col_names[i]=="age_factor_Greater than 45":
+            col_names[i] = "age_factor_greater_than_45"
+        elif col_names[i]=="age_factor_Less than 25":
+            col_names[i] = "age_factor_less_than_25"
     return new_df
 
 
@@ -110,18 +131,18 @@ def load_compas():
 def load_synthetic(ver = "recid"):
     if ver == "recid":
         size = 6000
-        length_of_stay = np.random.normal(14, 46, size = size)
+        priors_count = np.round(np.abs(np.random.uniform(3.246, 4.743, size = size)))
         two_year_recid = np.random.binomial(1,0.455, size = size)
         is_Caucasian = np.random.binomial(1,0.34, size = size)
-        charge_degree_M = np.random.binomial(1,0.3567, size = size)
+        crime_factor = np.random.binomial(1,0.3567, size = size)
         age_greater_than_45 = np.random.binomial(1,0.209, size = size)
         age_less_than_25  = np.random.binomial(1,0.218, size = size)
         sex_male = np.random.binomial(1,0.809, size = size)
-        score_text = np.around(sigmoid((length_of_stay*(0.1)+two_year_recid+is_Caucasian+charge_degree_M+
-        age_greater_than_45+age_less_than_25+sex_male), alpha = -0.5)).astype(int)
-        synth_cat = pd.DataFrame({"score_text": score_text, "length_of_stay":length_of_stay,
-            "two_year_recid":two_year_recid, "is_Caucasian":is_Caucasian, "c_charge_degree_M":charge_degree_M,
-            "age_greater_than_45":age_greater_than_45, "age_less_than_25":age_less_than_25, "sex_Male":sex_male})
+        score_text = np.around(sigmoid((priors_count*(0.1)+two_year_recid+is_Caucasian+crime_factor+
+        age_greater_than_45+age_less_than_25+sex_male), alpha = 3)).astype(int)
+        synth_cat = pd.DataFrame({"score_factor": score_text, "priors_count":priors_count,
+            "two_year_recid":two_year_recid, "is_Caucasian":is_Caucasian, "crime_factor":crime_factor,
+            "age_factor_greater_than_45":age_greater_than_45, "age_factor_less_than_25":age_less_than_25, "gender_factor":sex_male})
         synth_cat_test = synth_cat.iloc[:round(0.333*size),:]
         synth_cat_train = synth_cat.iloc[round(0.333*size):,:]
     elif ver == "simple":
@@ -133,33 +154,38 @@ def load_synthetic(ver = "recid"):
         synth_cat_test = synth_cat.iloc[:round(0.333*size),:]
         synth_cat_train = synth_cat.iloc[round(0.333*size):,:]
     else:
+        #TODO change parameters for violent
         size = 4000
-        length_of_stay = np.random.normal(12.16, 50.93, size = size)
-        two_year_recid = np.random.binomial(1,0.16, size = size)
-        is_Caucasian = np.random.binomial(1,0.3629, size = size)
-        charge_degree_M = np.random.binomial(1,0.3997, size = size)
-        age_greater_than_45 = np.random.binomial(1,0.2373, size = size)
-        age_less_than_25  = np.random.binomial(1,0.1905, size = size)
-        sex_male = np.random.binomial(1,0.79, size = size)
-        score_text = np.around(sigmoid((length_of_stay*(0.1)+two_year_recid+is_Caucasian+charge_degree_M+
-        age_greater_than_45+age_less_than_25+sex_male), alpha = -4.5)).astype(int)
-        synth_cat = pd.DataFrame({"score_text": score_text, "length_of_stay":length_of_stay,
-            "two_year_recid":two_year_recid, "is_Caucasian":is_Caucasian, "c_charge_degree_M":charge_degree_M,
-            "age_greater_than_45":age_greater_than_45, "age_less_than_25":age_less_than_25, "sex_Male":sex_male})
+        priors_count = np.round(np.abs(np.random.uniform(3.246, 4.743, size = size)))
+        two_year_recid = np.random.binomial(1,0.455, size = size)
+        is_Caucasian = np.random.binomial(1,0.34, size = size)
+        crime_factor = np.random.binomial(1,0.3567, size = size)
+        age_greater_than_45 = np.random.binomial(1,0.209, size = size)
+        age_less_than_25  = np.random.binomial(1,0.218, size = size)
+        sex_male = np.random.binomial(1,0.809, size = size)
+        score_text = np.around(sigmoid((priors_count*(0.1)+two_year_recid+is_Caucasian+crime_factor+
+        age_greater_than_45+age_less_than_25+sex_male), alpha = 3)).astype(int)
+        synth_cat = pd.DataFrame({"score_factor": score_text, "priors_count":priors_count,
+            "two_year_recid":two_year_recid, "is_Caucasian":is_Caucasian, "crime_factor":crime_factor,
+            "age_factor_greater_than_45":age_greater_than_45, "age_factor_less_than_25":age_less_than_25, "gender_factor":sex_male})
         synth_cat_test = synth_cat.iloc[:round(0.333*size),:]
         synth_cat_train = synth_cat.iloc[round(0.333*size):,:]
 
     return {"test":synth_cat_test, "train": synth_cat_train}
 
 
-def spd(pred, protected_class):
+def spd(pred, protected_class, positive=False):
     """
     Equation: |P(Y_pred = y | Z = 1) - P(Y_pred = y | Z = 0)|
     Assumes protected_class is 0/1 binary"""
     z_1 = [y for y, z in zip(pred, np.array(protected_class)) if z == 1]
     z_0 = [y for y, z in zip(pred, np.array(protected_class)) if z == 0]
-    if len(z_1)+len(z_0)!=len(pred):
-        print("NOT EQUAL")
+
+    if not positive:
+        z_1 = [0 if z ==1 else 1 for z in z_1]
+        z_0 = [0 if z ==1 else 1 for z in z_1]
+    """if len(z_1)+len(z_0)!=len(pred):
+        print("NOT EQUAL")"""
     return abs(sum(z_1)/len(z_1)-sum(z_0)/len(z_0))
 
 
@@ -250,10 +276,11 @@ def data_remover_cat(full_data, missing_col, missing_pct, missing="mar"):
 
     else:
         mcar = np.random.binomial(n=1, p=missing_pct/100, size=len(data))
-        data["missing"] = [np.nan if m == 1 else 0 for m in mcar]
-        data[missing_col] = data[missing_col].mask(data["missing"] == np.nan,
+        data["missing"] = [1 if m == 1 else 0 for m in mcar]
+        data[missing_col] = data[missing_col].mask(data["missing"] == 1,
                                                    other=np.nan)
-        data.drop("missing", axis=1, inplace=True)
+        data = data.drop("missing", axis=1)
+        #print("MCAR")
     return data
 
 
@@ -268,18 +295,30 @@ def regression_imputer(full_data, missing):
 
 @ignore_warnings(category=ConvergenceWarning)
 def impute(dataframe, missing_col, impute="cca"):
+    #TODO add knn imputation
     data = dataframe.copy()
     if impute == "cca":
         data.dropna(axis=0, inplace=True)
+        #print("Lost ", old_len-len(data), " rows.")
     elif impute == "mean":
         if data[missing_col].nunique() == 2:
             mode = data[missing_col].mode(dropna=True)[0]
             data[missing_col] = data[missing_col].fillna(mode)
         else:
+            #print(data[missing_col].mean(skipna=True))
             mean = data[missing_col].mean(skipna=True)
             data[missing_col] = data[missing_col].fillna(mean)
     elif impute == "reg":
-        pass
+        if data[missing_col].nunique() == 2:
+            model = LogisticRegression(random_state=0, max_iter=300)
+        else:
+            model = LinearRegression()
+        model = model.fit(data.dropna().drop(missing_col, axis = 1), data.dropna()[missing_col])
+        data = data.fillna(-1)
+        for i, row in data.iterrows():
+            if row[missing_col] == -1:
+                data.loc[i, missing_col] = model.predict(row.drop(missing_col))[0]
+        print("NANS: ", data.value_counts())
     elif impute == "mice_def":
         imputer = IterativeImputer(random_state=0)
         imputer.fit(data)
@@ -297,9 +336,13 @@ def impute(dataframe, missing_col, impute="cca"):
             imputer = IterativeImputer(estimator=model, random_state=0)
             imputer.fit(data)
             data = pd.DataFrame(imputer.transform(data), columns=data.columns)
+    elif impute == "knn":
+        pass
     return data
 
 #TODO Note down overall accuracy scores in a json.
+#TODO get on the above 
+#TODO get average TPR, TNR, EO, PP, SPD across all models and plot
 @ignore_warnings(category=ConvergenceWarning)
 def test_bench(train, test, pred: str, missing: str, sensitive: str, pred_var_type: str = "cat",
     percentiles = None):
@@ -318,7 +361,7 @@ def test_bench(train, test, pred: str, missing: str, sensitive: str, pred_var_ty
     if pred_var_type == "cat":
         models = ["log_reg", "rf_cat", "svm", "knn"]
     else:
-        models = ["lin_reg", "rf_cont"]
+        models = ["lin_reg", "rf_cont", "knn"]
     # Run with full data
 
     results = {"mar": {"spd": {m: {i: [] for i in IMPUTATIONS} for m in models}, "eo": {m: {i: [] for i in IMPUTATIONS} for m in models}, "pp": {m: {i: [] for i in IMPUTATIONS} for m in models}},
@@ -333,7 +376,7 @@ def test_bench(train, test, pred: str, missing: str, sensitive: str, pred_var_ty
         results[m+"_0"] = confusion_matrix(class_0_test[pred], predictions_0)
         results[m+"_1"] = confusion_matrix(class_1_test[pred], predictions_1)
         for p in percentiles:
-            for imp in ["cca", "mice_def", "mean"]:
+            for imp in ["cca", "mice_def", "mean"]:#, "reg"]:
                 # TPR, FPR, TNR, FNR data
                 data_mcar = impute(data_remover_cat(
                     train, missing, p, missing="mcar"), missing, impute=imp)
@@ -392,47 +435,50 @@ def test_bench(train, test, pred: str, missing: str, sensitive: str, pred_var_ty
 
 
 #TODO Add filename thingy
-def plotting_cf(models, correctives, results, key = None):
+def plotting_cf(models, correctives, results, key = None, n_runs = 1):
+    table = {}
     if key is None:
         if not os.path.isdir(Path(SAVEPATH)):
             os.mkdir(Path(SAVEPATH))
-            savepath = SAVEPATH
+        savepath = SAVEPATH
     else:
         if not os.path.isdir(Path(SAVEPATH+key)):
             os.mkdir(Path(SAVEPATH+key))
-            savepath = SAVEPATH+key
+        savepath = SAVEPATH+key
+    averages = {"mcar": {c:{"tpr": {"0": [], "1": []}, "tnr": {"0": [], "1": []}} for c in correctives},
+                    "mar":{c:{"tpr": {"0": [], "1": []}, "tnr": {"0": [], "1": []}} for c in correctives}}
     for m in models:
         for c in correctives:
             tpr_mar = {"0": {}, "1": {}}
             tnr_mar = {"0": {}, "1": {}}
             tpr_mcar = {"0": {}, "1": {}}
             tnr_mcar = {"0": {}, "1": {}}
-            for key, value in results.items():
-                if m+"_mar" in key and c in key:
-                    if key[-1] == "0":
-                        tpr_mar["0"][int(key.split("_")[-2])
-                                     ] = value.iloc[0, 0]
-                        tnr_mar["0"][int(key.split("_")[-2])
-                                     ] = value.iloc[1, 1]
+            for k, value in results.items():
+                if m+"_mar" in k and c in k:
+                    if k[-1] == "0":
+                        tpr_mar["0"][int(k.split("_")[-2])
+                                     ] = value["Predicted true"][0]
+                        tnr_mar["0"][int(k.split("_")[-2])
+                                     ] = value["Predicted false"][1]
                     else:
-                        tpr_mar["1"][int(key.split("_")[-2])
-                                     ] = value.iloc[0, 0]
-                        tnr_mar["1"][int(key.split("_")[-2])
-                                     ] = value.iloc[1, 1]
-                elif m+"_mcar" in key and c in key:
+                        tpr_mar["1"][int(k.split("_")[-2])
+                                     ] = value["Predicted true"][0]
+                        tnr_mar["1"][int(k.split("_")[-2])
+                                     ] = value["Predicted false"][1]
+                elif m+"_mcar" in k and c in k:
                     try:
-                        if key[-1] == "0":
-                            tpr_mcar["0"][int(key.split("_")[-2])
-                                          ] = value.iloc[0, 0]
-                            tnr_mcar["0"][int(key.split("_")[-2])
-                                          ] = value.iloc[1, 1]
+                        if k[-1] == "0":
+                            tpr_mcar["0"][int(k.split("_")[-2])
+                                          ] = value["Predicted true"][0]
+                            tnr_mcar["0"][int(k.split("_")[-2])
+                                          ] = value["Predicted false"][1]
                         else:
-                            tpr_mcar["1"][int(key.split("_")[-2])
-                                          ] = value.iloc[0, 0]
-                            tnr_mcar["1"][int(key.split("_")[-2])
-                                          ] = value.iloc[1, 1]
+                            tpr_mcar["1"][int(k.split("_")[-2])
+                                          ] = value["Predicted true"][0]
+                            tnr_mcar["1"][int(k.split("_")[-2])
+                                          ] = value["Predicted false"][1]
                     except Exception as e:
-                        print("key", key, "exception", e)
+                        print("k", k, "exception", e)
             tpr_mar = collections.OrderedDict(sorted(tpr_mar.items()))
 
             fig = plt.gcf()
@@ -449,7 +495,7 @@ def plotting_cf(models, correctives, results, key = None):
             plt.title(m+"_"+c+"_MAR")
             plt.xlabel("Missingness percent")
             plt.ylabel("Accuracy")
-            plt.ylim(0.0, 1.01)
+            #plt.ylim(0.6, 1.01)
             plt.legend()
             plt.savefig(Path(savepath+m+"_"+c+"_MAR.png"))
             plt.clf()
@@ -465,10 +511,64 @@ def plotting_cf(models, correctives, results, key = None):
             plt.title(m+"_"+c+"_MCAR")
             plt.xlabel("Missingness percent")
             plt.ylabel("Accuracy")
-            plt.ylim(0.0, 1.01)
+            #plt.ylim(0.6, 1.01)
             plt.legend()
-            plt.savefig(Path(SAVEPATH+m+"_"+c+"_MCAR.png"))
+            plt.savefig(Path(savepath+m+"_"+c+"_MCAR.png"))
             plt.clf()
+
+            averages["mar"][c]["tpr"]["0"].append(list(tpr_mar["0"].values()))
+            averages["mar"][c]["tpr"]["1"].append(list(tpr_mar["1"].values()))
+            averages["mar"][c]["tnr"]["0"].append(list(tnr_mar["0"].values()))
+            averages["mar"][c]["tnr"]["1"].append(list(tnr_mar["1"].values()))
+            averages["mcar"][c]["tpr"]["0"].append(list(tpr_mcar["0"].values()))
+            averages["mcar"][c]["tpr"]["1"].append(list(tpr_mcar["1"].values()))
+            averages["mcar"][c]["tnr"]["0"].append(list(tnr_mcar["0"].values()))
+            averages["mcar"][c]["tnr"]["1"].append(list(tnr_mcar["1"].values()))
+            #print(tpr_mcar)
+            #print(list(tpr_mar["0"].values())[10])
+            table[m+"_"+c+"_MCAR"] = [float(list(tpr_mcar["1"].values())[10]),float(list(tpr_mcar["0"].values())[10]),
+                (list(tnr_mcar["1"].values())[10]), float(list(tnr_mcar["0"].values())[10])]
+            table[m+"_"+c+"_MAR"] = [float(list(tpr_mar["1"].values())[10]),float(list(tpr_mar["0"].values())[10]),
+                float(list(tnr_mar["1"].values())[10]), float(list(tnr_mar["0"].values())[10])]
+    #print(table)
+
+
+    for c in correctives:
+        plt.plot(list(tpr_mcar["0"].keys()), np.mean(averages["mcar"][c]["tpr"]["0"], axis = 0),
+            label="TPR MCAR class 0")
+        plt.plot(list(tpr_mcar["1"].keys()), np.mean(averages["mcar"][c]["tpr"]["1"], axis = 0),
+            label="TPR MCAR class 1")
+        plt.plot(list(tnr_mcar["0"].keys()), np.mean(averages["mcar"][c]["tnr"]["0"], axis = 0),
+            label="TNR MCAR class 0")
+        plt.plot(list(tnr_mcar["1"].keys()), np.mean(averages["mcar"][c]["tnr"]["1"], axis = 0),
+            label="TNR MCAR class 1")
+        plt.title("Average performance of " +c + " across models")
+        plt.xlabel("Missingness percent")
+        plt.ylabel("Accuracy")
+        #plt.ylim(0.6, 1.01)
+        plt.legend()
+        plt.savefig(Path(savepath+"average_"+c+"_MCAR.png"))
+        plt.clf()
+
+        plt.plot(list(tpr_mcar["0"].keys()), np.mean(averages["mar"][c]["tpr"]["0"], axis = 0),
+            label="TPR MAR class 0")
+        plt.plot(list(tpr_mcar["1"].keys()), np.mean(averages["mar"][c]["tpr"]["1"], axis = 0),
+            label="TPR MAR class 1")
+        plt.plot(list(tnr_mcar["0"].keys()), np.mean(averages["mar"][c]["tnr"]["0"], axis = 0),
+            label="TNR MAR class 0")
+        plt.plot(list(tnr_mcar["1"].keys()), np.mean(averages["mar"][c]["tnr"]["1"], axis = 0),
+            label="TNR MAR class 1")
+        plt.title("Average performance of " +c + " across models")
+        plt.xlabel("Missingness percent")
+        plt.ylabel("Accuracy")
+        #plt.ylim(0.6, 1.01)
+        plt.legend()
+        plt.savefig(Path(savepath+"average_"+c+"_MAR.png"))
+        plt.clf()
+    return_df = pd.DataFrame(table, index = ["TPR Z=1", "TPR Z=0", "TNR Z=1", "TNR Z=0"])
+    #print(return_df.iloc[:,0])
+    save(savepath, "cf_table_data_"+key.split("/")[0]+".json", table)
+    return return_df
 
 
 def plotting_others(results, key = None):
@@ -480,12 +580,14 @@ def plotting_others(results, key = None):
         if not os.path.isdir(Path(SAVEPATH+key)):
             os.mkdir(Path(SAVEPATH+key))
         savepath = SAVEPATH+key
+    table = {}
     for missingness, data in results.items():
         if missingness != "mar" and missingness != "mcar":
             continue
         for metric, res in data.items():
             for model, imps in res.items():
                 for imputation, vals in imps.items():
+                    table[model+"_"+imputation+"_"+missingness] = {}
                     if len(vals) == 0:
                         continue
                     if isinstance(vals[0], dict):
@@ -502,10 +604,12 @@ def plotting_others(results, key = None):
                         y_0), label=model+"_"+imputation+"Y=0")
                         plt.plot(list(results["percentiles"]), list(
                         y_1), label=model+"_"+imputation+"Y=1")
-                        plt.title(model+"_"+imputation+"_"+metric+"_"+missingness)
+                        plt.title(model+"_"+"_"+metric+"_"+missingness)
                         plt.xlabel("Missingness percent")
                         plt.ylabel(metric)
                         plt.legend()
+                        table[model+"_"+imputation+"_"+missingness][metric+"_Y=0"] = y_0[10]
+                        table[model+"_"+imputation+"_"+missingness][metric+"_Y=1"] = y_1[10]
                         
 
                     else:
@@ -513,9 +617,13 @@ def plotting_others(results, key = None):
                         fig.set_size_inches(18.5, 10.5)
                         plt.plot(list(results["percentiles"]), list(
                             vals), label=model+"_"+imputation)
-                        plt.title(model+"_"+imputation+"_"+metric+"_"+missingness)
+                        plt.title(model+"_"+"_"+metric+"_"+missingness)
                         plt.xlabel("Missingness percent")
                         plt.ylabel(metric)
                         plt.legend()
+                        table[model+"_"+imputation+"_"+missingness][metric] = vals[10]
                 plt.savefig(Path(savepath+model+"_"+imputation+"_"+metric+"_"+missingness+".png"))
                 plt.clf()
+    print(table)
+    save(savepath,"metrics_table_data_"+key.split("/")[0]+".json",table)
+    return pd.DataFrame(table, index = ["spd", "pp", "eo_Y=0", "eo_Y=1"])
