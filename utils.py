@@ -1,3 +1,4 @@
+from operator import imod
 from urllib import response
 from sklearn.svm import LinearSVC
 from sklearn.linear_model import LogisticRegression
@@ -19,20 +20,21 @@ from pathlib import Path
 import json
 import pickle
 import collections
+import copy
 
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
 
 # TODO figure out a good set of hyperparameters and a response on how to tune them
 # Perhaps irrelevant since we are looking at difference in performance due to missing data?
-MODELS = {"log_reg": LogisticRegression(random_state=0, max_iter=500),
+MODELS = {"log_reg": LogisticRegression(random_state = 0, max_iter=500),
                "lin_reg": LinearRegression(),
                "svm": LinearSVC(random_state=0, tol=1e-5),
                "knn": KNeighborsClassifier(n_neighbors=3),
                "rf_cat": RandomForestClassifier(max_depth=4, random_state=0),
                "rf_cont": RandomForestRegressor(max_depth=4, random_state=0)}
 
-IMPUTATIONS = ["cca", "mean", "mice_reg", "mice_def", "reg"]
+IMPUTATIONS = ["cca", "mean", "mice_def"]#, "reg"]
 
 SAVEPATH = "experiments/"
 
@@ -113,7 +115,7 @@ def compas_cleaning(df):
     return new_df
 
 
-def load_compas():
+def load_compas(version = "standard"):
     cols = ["days_b_screening_arrest",
     "is_recid",
     "c_charge_degree",
@@ -126,7 +128,10 @@ def load_compas():
     ]
     recid = pd.read_csv("./compas_recid.csv", usecols=cols+["score_text"])
     violent_recid = pd.read_csv("./compas_violent_recid.csv", usecols=cols+["v_score_text"])
-    return {"standard": splitter(compas_cleaning(recid)), "violent": splitter(compas_cleaning(violent_recid))}
+    if version == "standard":
+        return splitter(compas_cleaning(recid))
+    else:
+        return splitter(compas_cleaning(violent_recid))
 
 def load_synthetic(ver = "recid"):
     if ver == "recid":
@@ -173,8 +178,8 @@ def load_synthetic(ver = "recid"):
 
     return {"test":synth_cat_test, "train": synth_cat_train}
 
-
-def spd(pred, protected_class, positive=False):
+#Note just changed positive to True
+def spd(pred, protected_class, positive=True):
     """
     Equation: |P(Y_pred = y | Z = 1) - P(Y_pred = y | Z = 0)|
     Assumes protected_class is 0/1 binary"""
@@ -215,11 +220,17 @@ def predictive_parity(pred, prot, true):
         pred, prot, true) if z == 0 and y_hat == 1]
     try:
         z1 = sum(z1_yhat1)/len(z1_yhat1)
+    except:
+        print("PP error z1")
+        z1 = 0
+
+    try:
         z0 = sum(z0_yhat1)/len(z0_yhat1)
-        return abs(z1-z0)
-    except Exception as e:
-        #print("Exception: ", e)
-        return -1
+    except:
+        z0 = 0
+        print("PP error z0")
+
+    return abs(z1-z0)
     
 
 def confusion_matrix(true, pred):
@@ -247,7 +258,12 @@ def confusion_matrix(true, pred):
     return {"Predicted true": [tpr, fpr],
                 "Predicted false": [fnr, tnr]}
 
-
+def accuracy(true, pred):
+    correct = [1 if t == p else 0 for t,p in zip(true, pred)]
+    if len(correct)>0:
+        return sum(correct)/len(correct)
+    else:
+        return 0
 
 def data_remover_cat(full_data, missing_col, missing_pct, missing="mar"):
     # Missing_pct is in the range 0 to 100
@@ -340,102 +356,209 @@ def impute(dataframe, missing_col, impute="cca"):
         pass
     return data
 
+def load_data(dataset = "compas"):
+    #Loading helper function
+    if dataset == "compas":
+        return load_compas_alt()
+    elif dataset == "synthetic":
+        return load_synthetic()
+    else:
+        raise AttributeError("Wrong dataset name")
+
 #TODO Note down overall accuracy scores in a json.
 #TODO get on the above 
 #TODO get average TPR, TNR, EO, PP, SPD across all models and plot
 @ignore_warnings(category=ConvergenceWarning)
-def test_bench(train, test, pred: str, missing: str, sensitive: str, pred_var_type: str = "cat",
-    percentiles = None):
-
-    # sensitive var
-    class_0_test = test[test[sensitive] == 0]
-    class_1_test = test[test[sensitive] == 1]
+def test_bench(pred: str, missing: str, sensitive: str, data = "compas", pred_var_type: str = "cat",
+    percentiles = None, n_runs = 1):
 
     # print("class_0",sum(class_0_test[pred]))
     # print("class_1",sum(class_1_test[pred]))
-    results = {}
-    if percentiles is None:
-        percentiles = [i for i in range(1, 16)]+[j for j in range(20, 100, 10)]
+    full_results = {}
+    for i in tqdm(range(n_runs)):
+        loaded_data = load_data(data)
+        train = loaded_data["train"]
+        test = loaded_data["test"]
 
-    # TODO add xgboost, neural network
-    if pred_var_type == "cat":
-        models = ["log_reg", "rf_cat", "svm", "knn"]
-    else:
-        models = ["lin_reg", "rf_cont", "knn"]
-    # Run with full data
 
-    results = {"mar": {"spd": {m: {i: [] for i in IMPUTATIONS} for m in models}, "eo": {m: {i: [] for i in IMPUTATIONS} for m in models}, "pp": {m: {i: [] for i in IMPUTATIONS} for m in models}},
-                        "mcar": {"spd": {m: {i: [] for i in IMPUTATIONS} for m in models}, "eo": {m: {i: [] for i in IMPUTATIONS} for m in models}, "pp": {m: {i: [] for i in IMPUTATIONS} for m in models}},
-                        "percentiles": percentiles}
+        # sensitive var
+        class_0_test = test[test[sensitive] == 0]
+        class_1_test = test[test[sensitive] == 1]
+        if percentiles is None:
+            percentiles = [i for i in range(1, 16)]+[j for j in range(20, 100, 10)]
 
-    for m in tqdm(models):
-        predictions_0 = MODELS[m].fit(train.drop(pred, axis=1),
-                                           train[pred]).predict(class_0_test.drop(pred, axis=1))
-        predictions_1 = MODELS[m].fit(train.drop(pred, axis=1),
-                                           train[pred]).predict(class_1_test.drop(pred, axis=1))
-        results[m+"_0"] = confusion_matrix(class_0_test[pred], predictions_0)
-        results[m+"_1"] = confusion_matrix(class_1_test[pred], predictions_1)
-        for p in percentiles:
-            for imp in ["cca", "mice_def", "mean"]:#, "reg"]:
-                # TPR, FPR, TNR, FNR data
-                data_mcar = impute(data_remover_cat(
-                    train, missing, p, missing="mcar"), missing, impute=imp)
-                predictions_0 = MODELS[m].fit(data_mcar.drop(pred, axis=1),
-                                                   data_mcar[pred]).predict(class_0_test.drop(pred, axis=1))
-                predictions_1 = MODELS[m].fit(data_mcar.drop(pred, axis=1),
-                                                   data_mcar[pred]).predict(class_1_test.drop(pred, axis=1))
-                results[m+"_mcar_"+imp+"_" +
-                        str(p)+"_0"] = confusion_matrix(class_0_test[pred], predictions_0)
-                results[m+"_mcar_"+imp+"_" +
-                        str(p)+"_1"] = confusion_matrix(class_1_test[pred], predictions_1)
+        # TODO add xgboost, neural network
+        if pred_var_type == "cat":
+            models = ["log_reg", "rf_cat", "svm", "knn"]
+        else:
+            models = ["lin_reg", "rf_cont", "knn"]
+        # Run with full data
+        results = {"mar": {"acc": {m: {i: [] for i in IMPUTATIONS} for m in models}, "spd": {m: {i: [] for i in IMPUTATIONS} for m in models}, "eo": {m: {i: [] for i in IMPUTATIONS} for m in models}, "pp": {m: {i: [] for i in IMPUTATIONS} for m in models}},
+                            "mcar": {"acc": {m: {i: [] for i in IMPUTATIONS} for m in models}, "spd": {m: {i: [] for i in IMPUTATIONS} for m in models}, "eo": {m: {i: [] for i in IMPUTATIONS} for m in models}, "pp": {m: {i: [] for i in IMPUTATIONS} for m in models}},
+                            "percentiles": percentiles}
 
-                # Fairness metrics
-                y_hat = MODELS[m].fit(data_mcar.drop(pred, axis=1),
-                                           data_mcar[pred]).predict(test.drop(pred, axis=1))
-                results["mcar"]["spd"][m][imp].append(
-                    spd(y_hat, test[sensitive]))
-                results["mcar"]["eo"][m][imp].append(
-                    equalised_odds(y_hat, test[sensitive], test[pred]))
-                results["mcar"]["pp"][m][imp].append(
-                    predictive_parity(y_hat, test[sensitive], test[pred]))
+        for m in models:
+            """predictions_0 = MODELS[m].fit(train.drop(pred, axis=1),
+                                            train[pred]).predict(class_0_test.drop(pred, axis=1))
+            predictions_1 = MODELS[m].fit(train.drop(pred, axis=1),
+                                            train[pred]).predict(class_1_test.drop(pred, axis=1))
+            results[m+"_0"] = confusion_matrix(class_0_test[pred], predictions_0)
+            results[m+"_1"] = confusion_matrix(class_1_test[pred], predictions_1)"""
+            for p in percentiles:
+                #prev_spd = 0
+                for imp in ["cca", "mice_def", "mean"]:#, "reg"]:
+                    
+                    # TPR, FPR, TNR, FNR data
+                    data_mcar = impute(data_remover_cat(
+                        train, missing, p, missing="mcar"), missing, impute=imp)
+                    predictions_0 = MODELS[m].fit(data_mcar.drop(pred, axis=1),
+                                                    data_mcar[pred]).predict(class_0_test.drop(pred, axis=1))
+                    predictions_1 = MODELS[m].fit(data_mcar.drop(pred, axis=1),
+                                                    data_mcar[pred]).predict(class_1_test.drop(pred, axis=1))
+                    results[m+"_mcar_"+imp+"_" +
+                            str(p)+"_0"] = confusion_matrix(class_0_test[pred], predictions_0)
+                    results[m+"_mcar_"+imp+"_" +
+                            str(p)+"_1"] = confusion_matrix(class_1_test[pred], predictions_1)
 
-                # TPR, FPR, TNR, FNR data
-                data_mar = impute(data_remover_cat(
-                    train, missing, p, missing="mar"), missing, impute=imp)
-                
-                try:
-                    predictions_0 = MODELS[m].fit(data_mar.drop(pred, axis=1),
-                                                    data_mar[pred]).predict(class_0_test.drop(pred, axis=1))
-                except Exception as e:
-                    print("Exception: ", e)
-                    print("params: ", str(p)+imp)
-                    print("head: ", data_mar.head())
-                    print("sum: ", data_mar.sum()-len(data_mar))
-                predictions_1 = MODELS[m].fit(data_mar.drop(pred, axis=1),
-                                                   data_mar[pred]).predict(class_1_test.drop(pred, axis=1))
-                results[m+"_mar_"+imp+"_" +
-                        str(p)+"_0"] = confusion_matrix(class_0_test[pred], predictions_0)
-                results[m+"_mar_"+imp+"_" +
-                        str(p)+"_1"] = confusion_matrix(class_1_test[pred], predictions_1)
+                    # Fairness metrics
+                    y_hat = MODELS[m].fit(data_mcar.drop(pred, axis=1),
+                                            data_mcar[pred]).predict(test.drop(pred, axis=1))
+                    results["mcar"]["spd"][m][imp].append(
+                        spd(y_hat, test[sensitive]))
+                    results["mcar"]["eo"][m][imp].append(
+                        equalised_odds(y_hat, test[sensitive], test[pred]))
+                    results["mcar"]["pp"][m][imp].append(
+                        predictive_parity(y_hat, test[sensitive], test[pred]))
+                    results["mcar"]["acc"][m][imp].append(
+                        accuracy(test[pred], y_hat))
+                    # TPR, FPR, TNR, FNR data
+                    data_mar = impute(data_remover_cat(
+                        train, missing, p, missing="mar"), missing, impute=imp)
+                    
+                    try:
+                        predictions_0 = MODELS[m].fit(data_mar.drop(pred, axis=1),
+                                                        data_mar[pred]).predict(class_0_test.drop(pred, axis=1))
+                    except Exception as e:
+                        print("Exception: ", e)
+                        print("params: ", str(p)+imp)
+                        print("head: ", data_mar.head())
+                        print("sum: ", data_mar.sum()-len(data_mar))
+                    predictions_1 = MODELS[m].fit(data_mar.drop(pred, axis=1),
+                                                    data_mar[pred]).predict(class_1_test.drop(pred, axis=1))
+                    results[m+"_mar_"+imp+"_" +
+                            str(p)+"_0"] = confusion_matrix(class_0_test[pred], predictions_0)
+                    results[m+"_mar_"+imp+"_" +
+                            str(p)+"_1"] = confusion_matrix(class_1_test[pred], predictions_1)
 
-                # Fariness metrics
-                y_hat = MODELS[m].fit(data_mar.drop(pred, axis=1),
-                                           data_mar[pred]).predict(test.drop(pred, axis=1))
-                results["mar"]["spd"][m][imp].append(
-                    spd(y_hat, test[sensitive]))
-                results["mar"]["eo"][m][imp].append(
-                    equalised_odds(y_hat, test[sensitive], test[pred]))
-                results["mar"]["pp"][m][imp].append(
-                    predictive_parity(y_hat, test[sensitive], test[pred]))
+                    # Fariness metrics
+                    y_hat = MODELS[m].fit(data_mar.drop(pred, axis=1),
+                                            data_mar[pred]).predict(test.drop(pred, axis=1))
+                    results["mar"]["spd"][m][imp].append(
+                        spd(y_hat, test[sensitive]))
+                    results["mar"]["eo"][m][imp].append(
+                        equalised_odds(y_hat, test[sensitive], test[pred]))
+                    results["mar"]["pp"][m][imp].append(
+                        predictive_parity(y_hat, test[sensitive], test[pred]))
+                    results["mar"]["acc"][m][imp].append(
+                        accuracy(test[pred], y_hat))
+
+
+                    #TODO add to thesis that missingness was not applied to the test data
+                        #print(imp)
+                    
+                    #Only seems to be an issue with synthetic data as performance is consistently high
+                    """if prev_spd == np.sum(y_hat):
+                        print("UNCHANGED SPD!", prev_spd, len(data_mar), imp)
+                    else:
+                        prev_spd = np.sum(y_hat)
+                    if len(results["mar"]["spd"][m][imp]) ==0:
+                        print("SPD LEN = 0! Y_HAT = ", y_hat)"""
+        #full_results[str(i)] = results.copy()
+        #full_results[str(i)] = copy.deepcopy(results)
+        full_results[str(i)] = results
     try:
         save("./data/", "testresults.pickle", results)
     except Exception as e:
         print("Couldn't save data with exception: ", e)
-    return results
+    return full_results
+
+"""def averager(data, keys, average):
+    values = []
+    for j,k in enumerate(keys.keys()):
+        j=k
+    for i in range(len(data)):
+        if len(keys.keys())==1:
+            values.append(data[str(i)][0])"""
+
+def averaging_results(results):
+    averaged={}
+    #model parameters
+    for k1, v1 in results.items():
+        #A given iteration
+        for k2, v2 in v1.items():
+            for k3, v3 in v2.items():
+                if isinstance(v3, list):
+                    full_list = []
+                    for i in range(len(results)):
+                        full_list.append(results[k1][str(i)][k3])
+                    averaged[k1+"|"+k3] = {"mean": np.mean(full_list, axis=0),
+                                            "std": np.std(full_list, axis=0)}
+                    continue
+                for k4, v4 in v3.items():
+                    if isinstance(v4, list):
+                        #print(k1+"|"+k3+"|"+k4+"|"+k5)
+                        full_list = []
+                        for i in range(len(results)):
+                            full_list.append(results[k1][str(i)][k3][k4])
+                        averaged[k1+"|"+k3+"|"+k4] = {"mean": np.mean(full_list, axis=0),
+                                            "std": np.std(full_list, axis=0)}
+                        continue
+                    for k5,v5 in v4.items():
+                        if isinstance(v5, list):
+                            #print(k1+"|"+k3+"|"+k4+"|"+k5)
+                            full_list = []
+                            for i in range(len(results)):
+                                full_list.append(results[k1][str(i)][k3][k4][k5])
+                            averaged[k1+"|"+k3+"|"+k4+"|"+k5] = {"mean": np.mean(full_list, axis=0),
+                                                "std": np.std(full_list, axis=0)}
+                            continue
+                        for k6,v6 in v5.items():
+                            if isinstance(v6, list):
+                                try:
+                                    if isinstance(v6[0], dict):
+                                        pass
+                                    else:
+                                        full_list = []
+                                        for i in range(len(results)):
+                                            full_list.append(results[k1][str(i)][k3][k4][k5][k6])
+                                        #print(k1+"|"+k3+"|"+k4+"|"+k5+"|"+k6)
+                                        averaged[k1+"|"+k3+"|"+k4+"|"+k5+"|"+k6] = {"mean": np.mean(full_list, axis=0),
+                                                                "std": np.std(full_list, axis=0)}
+                                except:
+                                    
+                                    print(k1+"|"+k3+"|"+k4+"|"+k5+"|"+k6, "\n", v6)
+                                continue
+                            """for k7, v7 in v6.items():
+                                try:
+                                    if isinstance(v7[0], dict):
+                                        pass
+                                    else:
+                                        full_list = []
+                                        for i in range(len(results)):
+                                            full_list.append(results[k1][str(i)][k3][k4][k5][k6][k7])
+                                        #print(k1+"|"+k3+"|"+k4+"|"+k5+"|"+k6)
+                                        averaged[k1+"|"+k3+"|"+k4+"|"+k5+"|"+k6+"|"+k7] = {"mean": np.mean(full_list, axis=0),
+                                                                "std": np.std(full_list, axis=0)}
+                                except:
+                                    
+                                    print(k1+"|"+k3+"|"+k4+"|"+k5+"|"+k6+"|"+k7, "\n", v7)
+                                continue"""
+    return averaged 
 
 
-#TODO Add filename thingy
-def plotting_cf(models, correctives, results, key = None, n_runs = 1):
+#TODO REDO PLOTTING TO SUPPORT THE NEW DATA FORMAT
+#TODO Add filename thingy 
+def plotting_cf(models, correctives, results, key = None):
     table = {}
     if key is None:
         if not os.path.isdir(Path(SAVEPATH)):
@@ -627,3 +750,188 @@ def plotting_others(results, key = None):
     print(table)
     save(savepath,"metrics_table_data_"+key.split("/")[0]+".json",table)
     return pd.DataFrame(table, index = ["spd", "pp", "eo_Y=0", "eo_Y=1"])
+
+def dict_initialiser(data,experiment, model, percentiles):
+    p = {str(p):-1 for p in percentiles}
+
+    metric_keys = [i+"|"+"spd" for i in IMPUTATIONS]
+    metric_keys += [i+"|"+"eo" for i in IMPUTATIONS]
+    metric_keys += [i+"|"+"pp" for i in IMPUTATIONS]
+    metric_keys += [i+"|"+"acc" for i in IMPUTATIONS]
+    data[experiment][model] = {"mar":{m:[-1]*len(p) for m in metric_keys}, "mcar": {m:[-1]*len(p) for m in metric_keys},
+    "tpr1|mar":{imp: p.copy() for imp in IMPUTATIONS},"tpr0|mar":{imp: p.copy() for imp in IMPUTATIONS},
+    "tnr1|mar":{imp: p.copy() for imp in IMPUTATIONS}, "tnr0|mar":{imp: p.copy() for imp in IMPUTATIONS},
+    "tpr1|mcar":{imp: p.copy() for imp in IMPUTATIONS},"tpr0|mcar":{imp: p.copy() for imp in IMPUTATIONS},
+    "tnr1|mcar":{imp: p.copy() for imp in IMPUTATIONS}, "tnr0|mcar":{imp: p.copy() for imp in IMPUTATIONS}}
+    
+
+def sort_dict(dictio):
+    return collections.OrderedDict(sorted(dictio.items()))
+
+"""{5: 'priors_count_is_Caucasian_synth|mar|spd|log_reg|cca',
+ 2: 'priors_count_is_Caucasian_synth|percentiles',
+ 3: 'priors_count_is_Caucasian_synth|log_reg_mcar_mice_def_0_0|Predicted true'}"""
+
+
+def data_processing(data, models, percentiles):
+    plotting_data = {k.split("|")[0]:{} for k in list(data.keys())}
+    for key, value in data.items():
+        div_key = key.split("|")
+        if len(div_key)==2:
+            plotting_data["percentiles"] = [int(v) for v in value["mean"]]
+        elif len(div_key)==3:
+            model_data = div_key[1].split("_")
+            if model_data[0]+"_"+model_data[1] in models:
+                model = model_data[0]+"_"+model_data[1]
+                missing = model_data[2]
+            else:
+                model = model_data[0]
+                missing = model_data[1]
+            if model not in plotting_data[div_key[0]]:
+                dict_initialiser(data = plotting_data,experiment = div_key[0], model = model,
+                    percentiles = percentiles)
+
+            if div_key[-1] == "Predicted true":
+                rate = "tpr"
+                loc = 0
+            else:
+                rate = "tnr"
+                loc = 1
+
+            imp = model_data[-3] if model_data[-3] =="cca" or model_data[-3] == "mean" else str(model_data[-4])+"_"+str(model_data[-3])
+            #print(imp)
+            z = model_data[-1]
+            missing_p = model_data[-2] 
+            #print(plotting_data[div_key[0]][model].keys())
+            #print(model)
+            plotting_data[div_key[0]][model][str(rate)+str(z)+"|"+missing][imp][missing_p] = value["mean"][loc]
+        else:
+            #print("HERE", plotting_data[div_key[0]][model][div_key[1]][div_key[-1]+"|"+div_key[2]])
+            model = div_key[3]
+            if model not in plotting_data[div_key[0]]:
+                dict_initialiser(data = plotting_data,experiment = div_key[0], model = model,
+                    percentiles = percentiles)
+            plotting_data[div_key[0]][model][div_key[1]][div_key[-1]+"|"+div_key[2]] = value["mean"]
+    return plotting_data
+
+"""
+metric_keys += [i+"|"+"acc" for i in IMPUTATIONS]
+    data[experiment][model] = {"mar":{m:p.copy() for m in metric_keys}
+{5: 'priors_count_is_Caucasian_synth|mar|spd|log_reg|cca',
+ 2: 'priors_count_is_Caucasian_synth|percentiles',
+ 3: 'priors_count_is_Caucasian_synth|log_reg_mcar_mice_def_0_0|Predicted true'}"""
+
+def plotting_completer(title, xlabel, ylabel, save):
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.legend()
+    plt.savefig(Path(save))
+    plt.clf()
+
+CURRENT_MODELS = ["log_reg", "rf_cat", "knn"]
+def plotting_multi(data, models, percentiles):
+    full_table = {}
+    plotting_data = data_processing(data, models, percentiles)
+    #print(plotting_data['priors_count_is_Caucasian_synth'].keys())
+    
+    p = plotting_data["percentiles"]
+    #print(p)
+    for key, v in plotting_data.items():
+        table = {m+imp:{} for m,imp in zip(models, IMPUTATIONS) if m in CURRENT_MODELS}
+        if key == "percentiles":
+            continue
+        if key is None:
+            if not os.path.isdir(Path(SAVEPATH)):
+                os.mkdir(Path(SAVEPATH))
+            savepath = SAVEPATH
+        if key is not None:
+            if not os.path.isdir(Path(SAVEPATH)):
+                os.mkdir(Path(SAVEPATH))
+            if not os.path.isdir(Path(SAVEPATH+key+"/")):
+                os.mkdir(Path(SAVEPATH+key+"/"))
+            savepath = SAVEPATH+key+"/"
+            print(savepath)
+        
+        for model, value in v.items():
+            if model not in CURRENT_MODELS:
+                continue
+            for imp in IMPUTATIONS:
+                table[model+imp] = {"Accuracy MAR 50%": -1,"Accuracy MAR 20%": -1,
+                    "Accuracy MCAR 50%": -1,"Accuracy MCAR 20%": -1,
+                    "SPD MAR 50%": -1,"SPD MAR 20%": -1, "SPD MCAR 50%": -1,
+                    "SPD MCAR 20%": -1, "PP MAR 50%": -1, "PP MAR 20%": -1,
+                    "PP MCAR 50%": -1, "PP MCAR 20%": -1}  
+            for miss in ["mar", "mcar"]:
+                for x_axis in ["percent", "accuracy"]:
+                    if x_axis == "percent":
+                        x = p
+                    else:
+                        x = None
+                    for imp in IMPUTATIONS:
+                        if x is None:
+                            x = value[miss][imp+"|"+"acc"]
+                        spd = value[miss][imp+"|"+"spd"]
+                        fig = plt.gcf()
+                        fig.set_size_inches(18.5, 10.5)
+                        plt.plot(x, spd, label = "Imputation = "+imp)
+
+                        table[model+imp]["SPD "+miss.upper()+" 50%"] = spd[-1]
+                        table[model+imp]["SPD "+miss.upper()+" 20%"] = spd[10]
+                    plotting_completer(title = "SPD for "+ model+" with " +miss + " missingness", xlabel="Missingness percent",
+                        ylabel = "SPD", save=savepath+model+"_"+miss+"_"+x_axis+"_spd.png")
+
+                    for imp in IMPUTATIONS:
+                        acc = value[miss][imp+"|"+"acc"]
+                        #   print(acc)
+                        fig = plt.gcf()
+                        fig.set_size_inches(18.5, 10.5)
+                        plt.plot(x, acc, label = "Imputation = "+imp)
+
+                        table[model+imp]["Accuracy "+miss.upper()+" 50%"] = acc[-1]
+                        table[model+imp]["Accuracy "+miss.upper()+" 20%"] = acc[10]
+
+                    plotting_completer(title = "Accuracy for "+ model+" with " +miss + " missingness", xlabel="Missingness percent",
+                        ylabel = "Accuracy", save=savepath+model+"_"+miss+"_"+x_axis+"_acc.png")
+                        
+                    for imp in IMPUTATIONS:
+                        if x is None:
+                            x = value[miss][imp+"|"+"acc"]
+                        pp = value["mar"][imp+"|"+"pp"]
+                        fig = plt.gcf()
+                        fig.set_size_inches(18.5, 10.5)
+                        plt.plot(x, pp, label = "Imputation = "+imp)
+
+                        table[model+imp]["PP "+miss.upper()+" 50%"] = pp[-1]
+                        table[model+imp]["PP "+miss.upper()+" 20%"] = pp[10]
+                    
+                    plotting_completer(title = "Predictive Parity for "+ model+" with " +miss + " missingness", xlabel="Missingness percent",
+                        ylabel = "Predictive Parity", save=savepath+model+"_"+miss+"_"+x_axis+"_pp.png")
+                #Adding to table
+                
+                
+
+                for imp in IMPUTATIONS:
+                    fig = plt.gcf()
+                    fig.set_size_inches(18.5, 10.5)
+                    #Plotting true positive and true negative rates against missingness
+                    tpr1 = sort_dict(value["tpr1"+"|"+miss][imp])
+                    tpr0 = sort_dict(value["tpr0"+"|"+miss][imp])
+                    tnr1 = sort_dict(value["tnr1"+"|"+miss][imp])
+                    tnr0 = sort_dict(value["tnr0"+"|"+miss][imp])
+                    plt.plot(p,  list(tpr1.values()), label="True Positive Rate with Z=1")
+                    plt.plot(p,  list(tpr0.values()), label="True Positive Rate with Z=0")
+                    plt.plot(p,  list(tnr1.values()), label="True Positive Ratewith Z=1")
+                    plt.plot(p,  list(tnr0.values()), label="True Positive Ratewith Z=0")
+
+                    plt.title("True positive and negative rates for "+ model + " with imuptation= " +imp)
+                    plt.xlabel("Missingness percent")
+                    plt.ylabel("True rate")
+                    plt.legend()
+                    plt.savefig(Path(savepath+model+"_"+miss+"_"+imp+"_rates.png"))
+                    plt.clf()
+        full_table[key] = table
+
+
+                
+    return full_table
