@@ -183,8 +183,8 @@ def spd(pred, protected_class, positive=True):
     """
     Equation: |P(Y_pred = y | Z = 1) - P(Y_pred = y | Z = 0)|
     Assumes protected_class is 0/1 binary"""
-    z_1 = [y for y, z in zip(pred, np.array(protected_class)) if z == 1]
-    z_0 = [y for y, z in zip(pred, np.array(protected_class)) if z == 0]
+    z_1 = [y_hat for y_hat, z in zip(pred, np.array(protected_class)) if z == 1]
+    z_0 = [y_hat for y_hat, z in zip(pred, np.array(protected_class)) if z == 0]
 
     if not positive:
         z_1 = [0 if z ==1 else 1 for z in z_1]
@@ -229,6 +229,9 @@ def predictive_parity(pred, prot, true):
     except:
         z0 = 0
         print("PP error z0")
+
+    if z1 == 0 and z0 == 0:
+        print("Both PP values are zero!")
 
     return abs(z1-z0)
     
@@ -490,71 +493,6 @@ def test_bench(pred: str, missing: str, sensitive: str, data = "compas", pred_va
         if len(keys.keys())==1:
             values.append(data[str(i)][0])"""
 
-def averaging_results(results):
-    averaged={}
-    #model parameters
-    for k1, v1 in results.items():
-        #A given iteration
-        for k2, v2 in v1.items():
-            for k3, v3 in v2.items():
-                if isinstance(v3, list):
-                    full_list = []
-                    for i in range(len(results)):
-                        full_list.append(results[k1][str(i)][k3])
-                    averaged[k1+"|"+k3] = {"mean": np.mean(full_list, axis=0),
-                                            "std": np.std(full_list, axis=0)}
-                    continue
-                for k4, v4 in v3.items():
-                    if isinstance(v4, list):
-                        #print(k1+"|"+k3+"|"+k4+"|"+k5)
-                        full_list = []
-                        for i in range(len(results)):
-                            full_list.append(results[k1][str(i)][k3][k4])
-                        averaged[k1+"|"+k3+"|"+k4] = {"mean": np.mean(full_list, axis=0),
-                                            "std": np.std(full_list, axis=0)}
-                        continue
-                    for k5,v5 in v4.items():
-                        if isinstance(v5, list):
-                            #print(k1+"|"+k3+"|"+k4+"|"+k5)
-                            full_list = []
-                            for i in range(len(results)):
-                                full_list.append(results[k1][str(i)][k3][k4][k5])
-                            averaged[k1+"|"+k3+"|"+k4+"|"+k5] = {"mean": np.mean(full_list, axis=0),
-                                                "std": np.std(full_list, axis=0)}
-                            continue
-                        for k6,v6 in v5.items():
-                            if isinstance(v6, list):
-                                try:
-                                    if isinstance(v6[0], dict):
-                                        pass
-                                    else:
-                                        full_list = []
-                                        for i in range(len(results)):
-                                            full_list.append(results[k1][str(i)][k3][k4][k5][k6])
-                                        #print(k1+"|"+k3+"|"+k4+"|"+k5+"|"+k6)
-                                        averaged[k1+"|"+k3+"|"+k4+"|"+k5+"|"+k6] = {"mean": np.mean(full_list, axis=0),
-                                                                "std": np.std(full_list, axis=0)}
-                                except:
-                                    
-                                    print(k1+"|"+k3+"|"+k4+"|"+k5+"|"+k6, "\n", v6)
-                                continue
-                            """for k7, v7 in v6.items():
-                                try:
-                                    if isinstance(v7[0], dict):
-                                        pass
-                                    else:
-                                        full_list = []
-                                        for i in range(len(results)):
-                                            full_list.append(results[k1][str(i)][k3][k4][k5][k6][k7])
-                                        #print(k1+"|"+k3+"|"+k4+"|"+k5+"|"+k6)
-                                        averaged[k1+"|"+k3+"|"+k4+"|"+k5+"|"+k6+"|"+k7] = {"mean": np.mean(full_list, axis=0),
-                                                                "std": np.std(full_list, axis=0)}
-                                except:
-                                    
-                                    print(k1+"|"+k3+"|"+k4+"|"+k5+"|"+k6+"|"+k7, "\n", v7)
-                                continue"""
-    return averaged 
-
 
 #TODO REDO PLOTTING TO SUPPORT THE NEW DATA FORMAT
 #TODO Add filename thingy 
@@ -751,6 +689,72 @@ def plotting_others(results, key = None):
     save(savepath,"metrics_table_data_"+key.split("/")[0]+".json",table)
     return pd.DataFrame(table, index = ["spd", "pp", "eo_Y=0", "eo_Y=1"])
 
+
+def averaging_results(results):
+    averaged={}
+    #model parameters
+    for k1, v1 in results.items():
+        #A given iteration
+        for k2, v2 in v1.items():
+            for k3, v3 in v2.items():
+                if isinstance(v3, list):
+                    full_list = []
+                    for i in range(len(results)):
+                        full_list.append(results[k1][str(i)][k3])
+                    averaged[k1+"|"+k3] = {"mean": np.mean(full_list, axis=0),
+                                            "std": np.std(full_list, axis=0)}
+                    continue
+                for k4, v4 in v3.items():
+                    if isinstance(v4, list):
+                        #print(k1+"|"+k3+"|"+k4+"|"+k5)
+                        full_list = []
+                        for i in range(len(results)):
+                            full_list.append(results[k1][str(i)][k3][k4])
+                        averaged[k1+"|"+k3+"|"+k4] = {"mean": np.mean(full_list, axis=0),
+                                            "std": np.std(full_list, axis=0)}
+                        continue
+                    for k5,v5 in v4.items():
+                        if isinstance(v5, list):
+                            #print(k1+"|"+k3+"|"+k4+"|"+k5)
+                            full_list = []
+                            for i in range(len(results)):
+                                full_list.append(results[k1][str(i)][k3][k4][k5])
+                            averaged[k1+"|"+k3+"|"+k4+"|"+k5] = {"mean": np.mean(full_list, axis=0),
+                                                "std": np.std(full_list, axis=0)}
+                            continue
+                        for k6,v6 in v5.items():
+                            if isinstance(v6, list):
+                                try:
+                                    if isinstance(v6[0], dict):
+                                        pass
+                                    else:
+                                        full_list = []
+                                        for i in range(len(results)):
+                                            full_list.append(results[k1][str(i)][k3][k4][k5][k6])
+                                        #print(k1+"|"+k3+"|"+k4+"|"+k5+"|"+k6)
+                                        averaged[k1+"|"+k3+"|"+k4+"|"+k5+"|"+k6] = {"mean": np.mean(full_list, axis=0),
+                                                                "std": np.std(full_list, axis=0)}
+                                except:
+                                    
+                                    print(k1+"|"+k3+"|"+k4+"|"+k5+"|"+k6, "\n", v6)
+                                continue
+                            """for k7, v7 in v6.items():
+                                try:
+                                    if isinstance(v7[0], dict):
+                                        pass
+                                    else:
+                                        full_list = []
+                                        for i in range(len(results)):
+                                            full_list.append(results[k1][str(i)][k3][k4][k5][k6][k7])
+                                        #print(k1+"|"+k3+"|"+k4+"|"+k5+"|"+k6)
+                                        averaged[k1+"|"+k3+"|"+k4+"|"+k5+"|"+k6+"|"+k7] = {"mean": np.mean(full_list, axis=0),
+                                                                "std": np.std(full_list, axis=0)}
+                                except:
+                                    
+                                    print(k1+"|"+k3+"|"+k4+"|"+k5+"|"+k6+"|"+k7, "\n", v7)
+                                continue"""
+    return averaged 
+
 def dict_initialiser(data,experiment, model, percentiles):
     p = {str(p):-1 for p in percentiles}
 
@@ -927,6 +931,7 @@ def plotting_multi(data, models, percentiles):
                     plt.title("True positive and negative rates for "+ model + " with imuptation= " +imp)
                     plt.xlabel("Missingness percent")
                     plt.ylabel("True rate")
+                    plt.ylim(0.4, 1.0)
                     plt.legend()
                     plt.savefig(Path(savepath+model+"_"+miss+"_"+imp+"_rates.png"))
                     plt.clf()
