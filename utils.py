@@ -1,3 +1,4 @@
+from email.policy import default
 from operator import imod
 from urllib import response
 from sklearn.svm import LinearSVC
@@ -9,6 +10,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.utils._testing import ignore_warnings
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.model_selection import train_test_split
+import seaborn as sns
 
 from tqdm import tqdm
 import numpy as np
@@ -408,10 +410,19 @@ def load_data(dataset="compas"):
 @ignore_warnings(category=ConvergenceWarning)
 def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_type: str = "cat",
                percentiles=None, n_runs=1):
-
+    if pred_var_type == "cat":
+        models = ["log_reg", "rf_cat", "svm", "knn"]
+    else:
+        models = ["lin_reg", "rf_cont", "knn"]
     # print("class_0",sum(class_0_test[pred]))
     # print("class_1",sum(class_1_test[pred]))
-    full_results = {}
+    metrics = ["spd", "eo0","eo1", "pp", "acc", "tpr0", "tpr1", "tnr0", "tnr1"]
+    delta = {metr:{m:{i:[] for i in IMPUTATIONS} for m in models} for metr in metrics}
+    full_results = {"delta": {"mar":delta.copy(), "mcar": delta.copy()}}
+    
+    if percentiles is None:
+        percentiles = [i for i in range(
+            1, 16)]+[j for j in range(20, 100, 10)]
     for i in tqdm(range(n_runs)):
         loaded_data = load_data(data)
         train = loaded_data["train"]
@@ -420,17 +431,7 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
         # sensitive var
         class_0_test = test[test[sensitive] == 0]
         class_1_test = test[test[sensitive] == 1]
-        if percentiles is None:
-            percentiles = [i for i in range(
-                1, 16)]+[j for j in range(20, 100, 10)]
-
-        # TODO add xgboost, neural network
-        if pred_var_type == "cat":
-            models = ["log_reg", "rf_cat", "svm", "knn"]
-        else:
-            models = ["lin_reg", "rf_cont", "knn"]
-        # Run with full data
-        metrics = ["spd", "eo0","eo1", "pp", "acc", "tpr0", "tpr1", "tnr0", "tnr1"]
+        
         results = {"mar": {metr: {m: {i: [] for i in IMPUTATIONS} for m in models} for metr in metrics},
                    "mcar": {metr: {m: {i: [] for i in IMPUTATIONS} for m in models} for metr in metrics}}
         results["mar"]["delta"] = {metr: {m: {i: [] for i in IMPUTATIONS} for m in models} for metr in metrics}
@@ -447,14 +448,6 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
                 for m in models:
                     if imp == "coldel" and missing == sensitive:
                         continue
-                    """predictions_0 = MODELS[m].fit(train.drop(pred, axis=1),
-                                                    train[pred]).predict(class_0_test.drop(pred, axis=1))
-                    predictions_1 = MODELS[m].fit(train.drop(pred, axis=1),
-                                                    train[pred]).predict(class_1_test.drop(pred, axis=1))
-                    results[m+"_0"] = confusion_matrix(class_0_test[pred], predictions_0)
-                    results[m+"_1"] = confusion_matrix(class_1_test[pred], predictions_1)"""
-
-                    #prev_spd = 0
 
                     #MCAR
                     # TPR, FPR, TNR, FNR data
@@ -540,20 +533,95 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
                         print("SPD LEN = 0! Y_HAT = ", y_hat)"""
         #full_results[str(i)] = results.copy()
         #full_results[str(i)] = copy.deepcopy(results)
-        for miss in ["mcar", "mar"]:
+        
+        full_results[str(i)] = results
+    temp_delta = collections.defaultdict(list)
+    
+    for miss in ["mcar", "mar"]:
+        for key in [str(n) for n in range(n_runs)]:
             for m in models:
                 for imp in IMPUTATIONS:
                     for metric in metrics:
-                        for k, value in enumerate(results[miss][metric][m][imp]):
-                            #print(value)
-                            results[miss]["delta"][metric][m][imp] = [value - v for j, v in enumerate(results[miss][metric][m][imp]) if j != k]
-        full_results[str(i)] = results
+                        temp_delta[miss+"|"+metric+"|"+m+"|"+imp] += full_results[key][miss][metric][m][imp]
+    for key, value in temp_delta.items():
+        keys = key.split("|")
+        miss, metric, m, imp =keys[0],keys[1],keys[2],keys[3]
+        temp_results = []
+        key_combos = []
+        for i, v1 in enumerate(value):
+            for j, v2 in enumerate(value):
+                if str(i)+str(j) in key_combos or str(j)+str(i) in key_combos:
+                     continue
+                else:
+                    key_combos.append(str(i)+str(j))
+                    key_combos.append(str(j)+str(i))
+                    temp_results.append(v1-v2)
+        full_results["delta"][miss][metric][m][imp] = temp_results.copy()
     try:
         save("./data/", "testresults.pickle", results)
     except Exception as e:
         print("Couldn't save data with exception: ", e)
 
+    #Plotting differencings
+    key = "recid" if data == "compas" else "synth"
+    savepath = SAVEPATH+missing+"_"+sensitive+"_"+key+"/"
+    if not os.path.isdir(Path(savepath)):
+        os.mkdir(Path(savepath))
+    if not os.path.isdir(Path(savepath+"/differencing/")):
+        os.mkdir(Path(savepath+"/differencing/"))
+    savepath = savepath+"/differencing/"
+    
+    for miss in ["mcar", "mar"]:
+        for m in models:
+            for imp in IMPUTATIONS:
+                for metric in metrics:
+                    plotting_differencing(
+                        bucketiser(
+                            differencing_models(full_results, miss,metric,m,imp)
+                            ,0.3),
+                        title = "Differencing of " + m + " with " + imp + " measured by " + metric,
+                        savepath= savepath+m+"_"+imp+"_"+metric+".png")
+    
+    #Deleting differencings after they are no longer needed
+    del full_results["delta"]
     return full_results
+
+def bucketiser(count_dict, max):
+    lin =  np.linspace(-max, max, 26)
+    buckets = {str(v):0 for v in lin}
+    for key, value in count_dict.items():
+        prev = False
+        next = False
+        for l in lin:
+            if prev and next:
+                buckets[str(l)] = buckets[str(l)] + value
+                break
+            elif prev:
+                if float(key)<l:
+                    next = True
+            elif float(key)>l:
+                prev = True
+    return buckets
+
+def differencing_models(results, missing, metric, model, imputation):
+    test = {}
+    for val in results["delta"][missing][metric][model][imputation]:
+        if val not in test:
+            test[val] = 1
+        else:
+            test[val] = test[val]+1
+    return test
+
+def plotting_differencing(buckets, title, savepath):
+    sns.set_theme(style="whitegrid")
+    fig = plt.gcf()
+    fig.set_size_inches(20, 11)
+    sns.barplot(x = [round(float(a), 4) for a in list(buckets.keys())], y = list(buckets.values()))
+    plt.title(title)
+    plt.savefig(Path(savepath))
+    plt.clf()
+
+
 
 
 #TODO REDO PLOTTING TO SUPPORT THE NEW DATA FORMAT
