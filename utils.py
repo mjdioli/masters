@@ -23,12 +23,12 @@ import json
 import pickle
 import collections
 import copy
+from itertools import permutations
 
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
 
-# TODO figure out a good set of hyperparameters and a response on how to tune them
-# Perhaps irrelevant since we are looking at difference in performance due to missing data?
+# TODO
 MODELS = {"log_reg": LogisticRegression(random_state=0, max_iter=500),
           "lin_reg": LinearRegression(),
           "svm": LinearSVC(random_state=0, tol=1e-5),
@@ -37,12 +37,22 @@ MODELS = {"log_reg": LogisticRegression(random_state=0, max_iter=500),
           "rf_cont": RandomForestRegressor(max_depth=4, random_state=0)}
 
 IMPUTATIONS = ["cca", "mean", "mice_def", "coldel"]  # , "reg"]
+IMPUTATION_COMBOS = [perm[0]+"|"+perm[1] for perm in permutations(IMPUTATIONS, 2)]
 
 SAVEPATH = "experiments/"
 
+NAME_KEYS = {"coldel": "Column deletion",
+             "cca": "CCA",
+             "mice_def": "Chained Eqaution",
+             "mean": "Mean",
+             "log_reg": "Logistic Regression",
+             "svm": "SVM",
+             "knn": "KNN",
+             "rf_cat": "Random Forest"}
+
 font = {'family': 'normal',
         'weight': 'bold',
-        'size': 22}
+        'size': 25}
 
 plt.rc('font', **font)
 
@@ -78,22 +88,26 @@ def splitter(data, response="score_factor"):
 
 
 def load_compas_alt():
-    cols = ["score_factor", "gender_factor", "age_factor", "race_factor",
-            "priors_count", "crime_factor", "two_year_recid"]
+    cols = ["gender_factor", "age_factor", "race_factor",
+            "priors_count", "crime_factor", "two_year_recid"] # , "score_factor"]
     new_df = pd.read_csv("./formatted_recid.csv", usecols=cols)
     new_df["is_Caucasian"] = new_df["race_factor"].apply(
         lambda x: 1 if x == "Caucasian" else 0)
-    new_df["score_factor"] = new_df["score_factor"].apply(
-        lambda x: 0 if x == "LowScore" else 1)
+    #new_df["score_factor"] = new_df["score_factor"].apply(
+    #    lambda x: 0 if x == "LowScore" else 1)
     new_df["gender_factor"] = new_df["gender_factor"].apply(
         lambda x: 1 if x == "Male" else 0)
     new_df["crime_factor"] = new_df["crime_factor"].apply(
         lambda x: 0 if x == "F" else 1)
+    
+    #Flipping the variable so that 1 is the good outcome
+    new_df["two_year_recid"] = new_df["two_year_recid"].apply(
+        lambda x: 0 if x == 1 else 1)
     new_df = new_df.drop("race_factor", axis=1)
     new_df = pd.get_dummies(new_df,
                             columns=["age_factor"],
                             drop_first=True)
-    return splitter(new_df)
+    return splitter(new_df, response = "two_year_recid")
 
 
 def compas_cleaning(df):
@@ -151,7 +165,7 @@ def load_compas(version="standard"):
         return splitter(compas_cleaning(violent_recid))
 
 
-def load_synthetic(ver="recid"):
+def load_synthetic(ver="recid_alt"):
     if ver == "recid":
         size = 6000
         priors_count = np.round(
@@ -167,6 +181,24 @@ def load_synthetic(ver="recid"):
         synth_cat = pd.DataFrame({"score_factor": score_text, "priors_count": priors_count,
                                   "two_year_recid": two_year_recid, "is_Caucasian": is_Caucasian, "crime_factor": crime_factor,
                                   "age_factor_greater_than_45": age_greater_than_45, "age_factor_less_than_25": age_less_than_25, "gender_factor": sex_male})
+        synth_cat_test = synth_cat.iloc[:round(0.333*size), :]
+        synth_cat_train = synth_cat.iloc[round(0.333*size):, :]
+    elif ver == "recid_alt":
+        size = 6000
+        priors_count = np.round(
+            np.abs(np.random.uniform(3.246, 4.743, size=size)))
+        #two_year_recid = np.random.binomial(1, (1-0.455), size=size)
+        is_Caucasian = np.random.binomial(1, 0.34, size=size)
+        crime_factor = np.random.binomial(1, 0.3567, size=size)
+        age_greater_than_45 = np.random.binomial(1, 0.209, size=size)
+        age_less_than_25 = np.random.binomial(1, 0.218, size=size)
+        sex_male = np.random.binomial(1, 0.809, size=size)
+        two_year_recid = np.around(sigmoid((priors_count*(0.2)+is_Caucasian+crime_factor +
+                                age_greater_than_45+age_less_than_25+sex_male), alpha=2.6)).astype(int)
+        synth_cat = pd.DataFrame({"priors_count": priors_count, "two_year_recid": two_year_recid,
+                                  "is_Caucasian": is_Caucasian, "crime_factor": crime_factor,
+                                  "age_factor_greater_than_45": age_greater_than_45, 
+                                  "age_factor_less_than_25": age_less_than_25, "gender_factor": sex_male})
         synth_cat_test = synth_cat.iloc[:round(0.333*size), :]
         synth_cat_train = synth_cat.iloc[round(0.333*size):, :]
     elif ver == "simple":
@@ -204,7 +236,8 @@ def load_synthetic(ver="recid"):
 def spd(pred, protected_class, positive=True):
     """
     Equation: |P(Y_pred = y | Z = 1) - P(Y_pred = y | Z = 0)|
-    Assumes protected_class is 0/1 binary"""
+    Assumes that the positive class is the desired outcome and
+        that the protected_class is 0/1 binary"""
     z_1 = [y_hat for y_hat, z in zip(
         pred, np.array(protected_class)) if z == 1]
     z_0 = [y_hat for y_hat, z in zip(
@@ -434,10 +467,10 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
         
         results = {"mar": {metr: {m: {i: [] for i in IMPUTATIONS} for m in models} for metr in metrics},
                    "mcar": {metr: {m: {i: [] for i in IMPUTATIONS} for m in models} for metr in metrics}}
-        results["mar"]["delta"] = {metr: {m: {i: [] for i in IMPUTATIONS} for m in models} for metr in metrics}
-        results["mcar"]["delta"] = {metr: {m: {i: [] for i in IMPUTATIONS} for m in models} for metr in metrics}
+        results["mar"]["delta"] = {metr: {m: {i: [] for i in IMPUTATION_COMBOS} for m in models} for metr in metrics}
+        results["mcar"]["delta"] = {metr: {m: {i: [] for i in IMPUTATION_COMBOS} for m in models} for metr in metrics}
         #print("results", results)
-        for p in percentiles:
+        for p in percentiles:   
             data_mcar_missing = data_remover_cat(
                 train, missing, p, missing="mcar")
             data_mar_missing = data_remover_cat(
@@ -536,27 +569,48 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
         
         full_results[str(i)] = results
     temp_delta = collections.defaultdict(list)
+    avg = collections.defaultdict(list)
     
+    #Collecting all observations across runs
     for miss in ["mcar", "mar"]:
         for key in [str(n) for n in range(n_runs)]:
             for m in models:
                 for imp in IMPUTATIONS:
                     for metric in metrics:
                         temp_delta[miss+"|"+metric+"|"+m+"|"+imp] += full_results[key][miss][metric][m][imp]
-    for key, value in temp_delta.items():
-        keys = key.split("|")
-        miss, metric, m, imp =keys[0],keys[1],keys[2],keys[3]
-        temp_results = []
-        key_combos = []
-        for i, v1 in enumerate(value):
-            for j, v2 in enumerate(value):
-                if str(i)+str(j) in key_combos or str(j)+str(i) in key_combos:
-                     continue
-                else:
-                    key_combos.append(str(i)+str(j))
-                    key_combos.append(str(j)+str(i))
-                    temp_results.append(v1-v2)
-        full_results["delta"][miss][metric][m][imp] = temp_results.copy()
+                        avg[miss+"|"+metric+"|"+m+"|"+imp].append(full_results[key][miss][metric][m][imp])
+    
+    #Averaging
+    for key, value in avg.items():
+        avg[key] = [int(n) for n in np.mean(value, axis = 0)]
+
+
+    key_combos = []
+    for key1, value1 in temp_delta.items():
+        for key2, value2 in temp_delta.items():
+            
+            if key1==key2:
+                continue
+            keys1 = key1.split("|")
+            miss1, metric1, m1, imp1 =keys1[0],keys1[1],keys1[2],keys1[3]
+            keys2 = key2.split("|")
+            miss2, metric2, m2, imp2 =keys2[0],keys2[1],keys2[2],keys2[3]
+            if miss1!=miss2 or metric1!=metric2 or m1!=m2:
+                continue
+            
+            if imp1+imp2 in key_combos or imp2+imp1 in key_combos:
+                continue
+            else:
+                print(imp1+imp2)
+                key_combos.append(imp1+imp2)
+                key_combos.append(imp2+imp1)
+                #TODO FIX HERE
+                temp_results = []
+                for i, v1 in enumerate(value1):
+                    for j, v2 in enumerate(value2):
+                        temp_results.append(v1-v2)
+                #print("TEMP_RESULTS", temp_results)
+                full_results["delta"][miss1][metric1][m1][imp1+"|"+imp2] = temp_results.copy()
     try:
         save("./data/", "testresults.pickle", results)
     except Exception as e:
@@ -569,22 +623,30 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
         os.mkdir(Path(savepath))
     if not os.path.isdir(Path(savepath+"/differencing/")):
         os.mkdir(Path(savepath+"/differencing/"))
-    savepath = savepath+"/differencing/"
-    
+    savepath = savepath+"/differencing/" #TODO investigate if savepath is correct
+    #a = differencing_models(full_results, "mar","acc","log_reg","cca")
+    #b = differencing_models(full_results, "mcar","acc","log_reg","cca")
+    #print(a==b)
+    #print("a: ", a, "\n", "b: ", b)
     for miss in ["mcar", "mar"]:
         for m in models:
-            for imp in IMPUTATIONS:
-                for metric in metrics:
-                    plotting_differencing(
-                        bucketiser(
-                            differencing_models(full_results, miss,metric,m,imp)
-                            ,0.3),
-                        title = "Differencing of " + m + " with " + imp + " measured by " + metric,
-                        savepath= savepath+m+"_"+imp+"_"+metric+".png")
+            for metric in metrics:
+                for imp1 in IMPUTATIONS:
+                    for imp2 in IMPUTATIONS:
+                        if imp1==imp2 or imp1+"|"+imp2 not in full_results["delta"][miss][metric][m]:
+                            continue
+                        #TODO fix differencing step
+                        print("Missingness", miss, "IMP", imp1+"|"+imp2, "LENGTH", len(full_results["delta"][miss][metric][m][imp1+"|"+imp2]))
+                        plotting_differencing(
+                            bucketiser(
+                                differencing_models(full_results, miss,metric,m,imp1+"|"+imp2)
+                                ,0.3),
+                            title = "Differencing of " + NAME_KEYS[m] + " with " + NAME_KEYS[imp1] + "|"+ NAME_KEYS[imp2] + " measured by " + metric,
+                            savepath= savepath+miss+"_"+m+"_"+imp+"_"+metric+".png")
     
     #Deleting differencings after they are no longer needed
     del full_results["delta"]
-    return full_results
+    return {"Full data": full_results, "Averaged results": avg}
 
 def bucketiser(count_dict, max):
     lin =  np.linspace(-max, max, 26)
@@ -605,6 +667,8 @@ def bucketiser(count_dict, max):
 
 def differencing_models(results, missing, metric, model, imputation):
     test = {}
+    #print("DIFFERENCES", results["delta"][missing][metric][model][imputation])
+    #print("IMPUTATION", imputation)
     for val in results["delta"][missing][metric][model][imputation]:
         if val not in test:
             test[val] = 1
@@ -613,13 +677,18 @@ def differencing_models(results, missing, metric, model, imputation):
     return test
 
 def plotting_differencing(buckets, title, savepath):
-    sns.set_theme(style="whitegrid")
-    fig = plt.gcf()
-    fig.set_size_inches(20, 11)
-    sns.barplot(x = [round(float(a), 4) for a in list(buckets.keys())], y = list(buckets.values()))
-    plt.title(title)
-    plt.savefig(Path(savepath))
-    plt.clf()
+    if len(buckets) == 0:
+        print("LENGTH IS 0")
+        pass
+    else:
+        print("SAVING IN", savepath)
+        sns.set_theme(style="whitegrid")
+        fig = plt.gcf()
+        fig.set_size_inches(20, 11)
+        sns.barplot(x = [round(float(a), 4) for a in list(buckets.keys())], y = list(buckets.values()))
+        plt.title(title)
+        plt.savefig(Path(savepath))
+        plt.clf()
 
 
 
@@ -944,7 +1013,7 @@ def data_processing(data, models, percentiles):
                 rate = "tnr"
                 loc = 1
 
-            imp = model_data[-3] if model_data[-3] == "cca" or model_data[-3] == "mean" else str(
+            imp = model_data[-3] if model_data[-3] == "cca" or model_data[-3] == "mean" or model_data[-3] == "coldel"else str(
                 model_data[-4])+"_"+str(model_data[-3])
             #print(imp)
             z = model_data[-1]
@@ -989,7 +1058,7 @@ def plotting_multi(data, models, percentiles):
     plotting_data = data_processing(data, models, percentiles)
     #print(plotting_data['priors_count_is_Caucasian_synth'].keys())
 
-    p = plotting_data["percentiles"]
+    p = percentiles
     #print(p)
     for key, v in plotting_data.items():
         table = {m+imp: {}
@@ -1018,7 +1087,7 @@ def plotting_multi(data, models, percentiles):
                                     "SPD MCAR 20%": -1, "PP MAR 50%": -1, "PP MAR 20%": -1,
                                     "PP MCAR 50%": -1, "PP MCAR 20%": -1}
             for miss in ["mar", "mcar"]:
-                for x_axis in ["percent", "accuracy"]:
+                for x_axis in ["percent"]: # gives a bit weird plots and needs some work, "accuracy"]:
                     if x_axis == "percent":
                         x = p
                     else:
@@ -1029,11 +1098,11 @@ def plotting_multi(data, models, percentiles):
                         spd = value[miss][imp+"|"+"spd"]
                         fig = plt.gcf()
                         fig.set_size_inches(18.5, 10.5)
-                        plt.plot(x, spd, label="Imputation = "+imp)
+                        plt.plot(x, spd, label="Imputation = "+NAME_KEYS[imp])
 
                         table[model+imp]["SPD "+miss.upper()+" 50%"] = spd[-1]
                         table[model+imp]["SPD "+miss.upper()+" 20%"] = spd[10]
-                    plotting_completer(title="SPD for " + model+" with " + miss + " missingness", xlabel="Missingness percent",
+                    plotting_completer(title="SPD for " + NAME_KEYS[model] +" with " + miss + " missingness", xlabel="Missingness percent",
                                        ylabel="SPD", save=savepath+model+"_"+miss+"_"+x_axis+"_spd.png")
 
                     for imp in IMPUTATIONS:
@@ -1041,14 +1110,14 @@ def plotting_multi(data, models, percentiles):
                         #   print(acc)
                         fig = plt.gcf()
                         fig.set_size_inches(18.5, 10.5)
-                        plt.plot(x, acc, label="Imputation = "+imp)
+                        plt.plot(x, acc, label="Imputation = "+NAME_KEYS[imp])
 
                         table[model+imp]["Accuracy " +
                                          miss.upper()+" 50%"] = acc[-1]
                         table[model+imp]["Accuracy " +
                                          miss.upper()+" 20%"] = acc[10]
 
-                    plotting_completer(title="Accuracy for " + model+" with " + miss + " missingness", xlabel="Missingness percent",
+                    plotting_completer(title="Accuracy for " + NAME_KEYS[model]+" with " + miss + " missingness", xlabel="Missingness percent",
                                        ylabel="Accuracy", save=savepath+model+"_"+miss+"_"+x_axis+"_acc.png")
 
                     for imp in IMPUTATIONS:
@@ -1057,12 +1126,12 @@ def plotting_multi(data, models, percentiles):
                         pp = value["mar"][imp+"|"+"pp"]
                         fig = plt.gcf()
                         fig.set_size_inches(18.5, 10.5)
-                        plt.plot(x, pp, label="Imputation = "+imp)
+                        plt.plot(x, pp, label="Imputation = "+NAME_KEYS[imp])
 
                         table[model+imp]["PP "+miss.upper()+" 50%"] = pp[-1]
                         table[model+imp]["PP "+miss.upper()+" 20%"] = pp[10]
 
-                    plotting_completer(title="Predictive Parity for " + model+" with " + miss + " missingness", xlabel="Missingness percent",
+                    plotting_completer(title="Predictive Parity for " + NAME_KEYS[model]+" with " + miss + " missingness", xlabel="Missingness percent",
                                        ylabel="Predictive Parity", save=savepath+model+"_"+miss+"_"+x_axis+"_pp.png")
                 #Adding to table
 
@@ -1079,15 +1148,15 @@ def plotting_multi(data, models, percentiles):
                     plt.plot(p,  list(tpr0.values()),
                              label="True Positive Rate with Z=0")
                     plt.plot(p,  list(tnr1.values()),
-                             label="True Positive Ratewith Z=1")
+                             label="True Negative Rate with Z=1")
                     plt.plot(p,  list(tnr0.values()),
-                             label="True Positive Ratewith Z=0")
+                             label="True Negative Rate with Z=0")
 
                     plt.title("True positive and negative rates for " +
-                              model + " with imuptation= " + imp)
+                              NAME_KEYS[model] + " with imuptation= " + NAME_KEYS[imp])
                     plt.xlabel("Missingness percent")
                     plt.ylabel("True rate")
-                    plt.ylim(0.4, 1.0)
+                    plt.ylim(0.4, 1.05)
                     plt.legend()
                     plt.savefig(Path(savepath+model+"_" +
                                 miss+"_"+imp+"_rates.png"))
