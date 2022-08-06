@@ -14,11 +14,11 @@ class SGD_bayes():
     """
     lam = tradeoff between utility and fairness
     """
-    def __init__(self, num_x_features,num_y_features,num_z_features, lam = 0.5):
-        self.dirich_x = np.array([0.5]*num_x_features)
-        self.dirich_y_x = np.zeros(num_y_features, num_x_features) +0.5
-        self.dirich_z_yx =  np.zeros(num_z_features, num_y_features, num_x_features) +0.5
-        self.policy = np.random.uniform(0,1,size=(2,num_x_features))
+    def __init__(self, num_unique_x_values,num_unique_z_values,num_unique_y_values = 2, lam = 0.5):
+        self.dirich_x = np.array([0.5]*num_unique_x_values)
+        self.dirich_y_x = np.zeros(num_unique_y_values, num_unique_x_values) +0.5
+        self.dirich_z_yx =  np.zeros(num_unique_z_values, num_unique_y_values, num_unique_x_values) +0.5
+        self.policy = np.random.uniform(0,1,size=(2,num_unique_x_values))
         self.normalise_policy()
         
         
@@ -90,7 +90,7 @@ class SGD_bayes():
     def sample(self):
         nx, ny, nz =len(self.dirich_x), len(self.dirich_y_x), len(self.dirich_z_yx)
         px = np.random.dirichlet(self.dirich_x)
-        model = SGD_bayes(self.num_x_features, self.num_y_features, self.num_z_features)
+        model = SGD_bayes(self.num_unique_x_values, self.num_unique_y_values, self.num_unique_z_values)
         model.pxyz = np.zeros(nx,ny,nz)
         for i in range(nx):
             py_x = np.random.dirichlet(self.dirich_y_x[:,i])
