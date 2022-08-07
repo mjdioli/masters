@@ -32,8 +32,6 @@ class SGD_bayes():
     def get_model_delta(self):
         return self.px_y - self.px_yz
     
-    
-       
     def calculate_marginals(self):
         nx, ny, nz =len(self.dirich_x), len(self.dirich_y_x), len(self.dirich_z_yx)
         self.px_yz = np.zeros(nx, ny, nz)
@@ -106,9 +104,17 @@ class SGD_bayes():
     def impute(self, length, impute_index):
         return [0 if np.random.uniform(0,1)<self.policy[0][impute_index] else 1 for i in range(length)]
     
-    def fit(self, data):
-        #Assumes dataframe
-        self.dirichlet_params = np.array(self.dirichlet_params+data.sum())
+    def fit(self, data, x_params, y_param, z_params):
+        #Assumes dataframe input
+        self.dirich_x = np.array([0.5]*num_unique_x_values)
+        self.dirich_y_x = np.zeros(num_unique_y_values, num_unique_x_values) +0.5
+        self.dirich_z_yx =  np.zeros(num_unique_z_values, num_unique_y_values, num_unique_x_values)
+        for i in range(data):
+            for x in x_params:
+                self.dirich_x[x] = self.dirich_x[x]+int(data[x].iloc[i])
+                
+
+            
         print("Data fitted")
     
 

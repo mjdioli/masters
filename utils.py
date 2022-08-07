@@ -265,6 +265,21 @@ def equalised_odds(pred, prot, true):
         pred, prot, true) if z == 0 and y == 1]
     return {"Y=1": abs(sum(z1_y1)/len(z1_y1)-sum(z0_y1)/len(z0_y1)),
             "Y=0": abs(sum(z1_y0)/len(z1_y0)-sum(z0_y0)/len(z0_y0))}
+    
+def eo_sum(pred, prot, true):
+    """
+    Equation: |P(Y_pred = y_pred | Y_true = y_true, Z = 1) - P(Y_pred = y_pred | Y_true = y_true, Z = 0)|
+    Assumes prot is 0/1 binary"""
+    z1_y0 = [y_hat for y_hat, z, y in zip(
+        pred, prot, true) if z == 1 and y == 0]
+    z0_y0 = [y_hat for y_hat, z, y in zip(
+        pred, prot, true) if z == 0 and y == 0]
+    z1_y1 = [y_hat for y_hat, z, y in zip(
+        pred, prot, true) if z == 1 and y == 1]
+    z0_y1 = [y_hat for y_hat, z, y in zip(
+        pred, prot, true) if z == 0 and y == 1]
+    return abs(sum(z1_y1)/len(z1_y1)-sum(z0_y1)/len(z0_y1)) + abs(sum(z1_y0)/len(z1_y0)-sum(z0_y0)/len(z0_y0))
+    
 
 
 def predictive_parity(pred, prot, true):
@@ -449,7 +464,7 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
         models = ["lin_reg", "rf_cont", "knn"]
     # print("class_0",sum(class_0_test[pred]))
     # print("class_1",sum(class_1_test[pred]))
-    metrics = ["spd", "eo0","eo1", "pp", "acc", "tpr0", "tpr1", "tnr0", "tnr1"]
+    metrics = ["spd", "eo0","eo1", "eosum", "pp", "acc", "tpr0", "tpr1", "tnr0", "tnr1"]
     delta = {metr:{m:{i:[] for i in IMPUTATIONS} for m in models} for metr in metrics}
     full_results = {"delta": {"mar":delta.copy(), "mcar": delta.copy()}}
     
@@ -512,10 +527,10 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
                         predictive_parity(y_hat, test[sensitive], test[pred]))
                     results["mcar"]["acc"][m][imp].append(
                         accuracy(test[pred], y_hat))
-                    
                     eo = equalised_odds(y_hat, test[sensitive], test[pred])
                     results["mcar"]["eo0"][m][imp].append(eo["Y=0"])
                     results["mcar"]["eo1"][m][imp].append(eo["Y=1"])
+                    results["mcar"]["eosum"][m][imp].append(eo["Y=1"]+eo["Y=0"])
                     # TPR, FPR, TNR, FNR data
 
                     #MAR
@@ -554,6 +569,7 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
                     eo = equalised_odds(y_hat, test[sensitive], test[pred])
                     results["mar"]["eo0"][m][imp].append(eo["Y=0"])
                     results["mar"]["eo1"][m][imp].append(eo["Y=1"])
+                    results["mar"]["eosum"][m][imp].append(eo["Y=1"]+eo["Y=0"])
                     #TODO add to thesis that missingness was not applied to the test data
                     #print(imp)
 
@@ -585,7 +601,7 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
         avg[key] = [int(n) for n in np.mean(value, axis = 0)]
 
 
-    key_combos = []
+    key_combos = {"mar":[], "mcar":[]}
     for key1, value1 in temp_delta.items():
         for key2, value2 in temp_delta.items():
             
@@ -598,18 +614,20 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
             if miss1!=miss2 or metric1!=metric2 or m1!=m2:
                 continue
             
-            if imp1+imp2 in key_combos or imp2+imp1 in key_combos:
+            if imp1+imp2 in key_combos[miss1] or imp2+imp1 in key_combos[miss1]:
                 continue
             else:
-                print(imp1+imp2)
-                key_combos.append(imp1+imp2)
-                key_combos.append(imp2+imp1)
+                #print(imp1+imp2)
+                key_combos[miss1].append(imp1+imp2)
+                key_combos[miss1].append(imp2+imp1)
                 #TODO FIX HERE
                 temp_results = []
                 for i, v1 in enumerate(value1):
                     for j, v2 in enumerate(value2):
+                        if i==j:
+                            continue
                         temp_results.append(v1-v2)
-                #print("TEMP_RESULTS", temp_results)
+                print("TEMP_RESULTS"+miss1+imp1+imp2, len(temp_results))
                 full_results["delta"][miss1][metric1][m1][imp1+"|"+imp2] = temp_results.copy()
     try:
         save("./data/", "testresults.pickle", results)
@@ -623,11 +641,12 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
         os.mkdir(Path(savepath))
     if not os.path.isdir(Path(savepath+"/differencing/")):
         os.mkdir(Path(savepath+"/differencing/"))
-    savepath = savepath+"/differencing/" #TODO investigate if savepath is correct
+    savepath = savepath+"differencing/" #TODO investigate if savepath is correct
     #a = differencing_models(full_results, "mar","acc","log_reg","cca")
     #b = differencing_models(full_results, "mcar","acc","log_reg","cca")
     #print(a==b)
     #print("a: ", a, "\n", "b: ", b)
+    print(metrics)
     for miss in ["mcar", "mar"]:
         for m in models:
             for metric in metrics:
@@ -636,20 +655,20 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
                         if imp1==imp2 or imp1+"|"+imp2 not in full_results["delta"][miss][metric][m]:
                             continue
                         #TODO fix differencing step
-                        print("Missingness", miss, "IMP", imp1+"|"+imp2, "LENGTH", len(full_results["delta"][miss][metric][m][imp1+"|"+imp2]))
+                        #print("Missingness", miss, "IMP", imp1+"|"+imp2, "METRIC", metric)
                         plotting_differencing(
                             bucketiser(
                                 differencing_models(full_results, miss,metric,m,imp1+"|"+imp2)
                                 ,0.3),
                             title = "Differencing of " + NAME_KEYS[m] + " with " + NAME_KEYS[imp1] + "|"+ NAME_KEYS[imp2] + " measured by " + metric,
-                            savepath= savepath+miss+"_"+m+"_"+imp+"_"+metric+".png")
+                            savepath= savepath+miss+"_"+m+"_"+imp1+"_"+imp2+"_"+metric+".png")
     
     #Deleting differencings after they are no longer needed
     del full_results["delta"]
     return {"Full data": full_results, "Averaged results": avg}
 
 def bucketiser(count_dict, max):
-    lin =  np.linspace(-max, max, 26)
+    lin =  np.linspace(-max, max, 30)
     buckets = {str(v):0 for v in lin}
     for key, value in count_dict.items():
         prev = False
@@ -681,13 +700,14 @@ def plotting_differencing(buckets, title, savepath):
         print("LENGTH IS 0")
         pass
     else:
-        print("SAVING IN", savepath)
+        #print("SAVING IN", savepath)
         sns.set_theme(style="whitegrid")
         fig = plt.gcf()
         fig.set_size_inches(20, 11)
         sns.barplot(x = [round(float(a), 4) for a in list(buckets.keys())], y = list(buckets.values()))
         plt.title(title)
         plt.savefig(Path(savepath))
+        #plt.show()
         plt.clf()
 
 
