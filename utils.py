@@ -1,6 +1,7 @@
 from email.policy import default
 from operator import imod
 from urllib import response
+from fair_logistic_reg import FairLogisticRegression
 from sklearn.svm import LinearSVC
 from sklearn.linear_model import LogisticRegression
 from sklearn.linear_model import LinearRegression
@@ -36,7 +37,7 @@ MODELS = {"log_reg": LogisticRegression(random_state=0, max_iter=500),
           "rf_cat": RandomForestClassifier(max_depth=4, random_state=0),
           "rf_cont": RandomForestRegressor(max_depth=4, random_state=0)}
 
-IMPUTATIONS = ["cca", "mean", "mice_def", "coldel"]  # , "reg"]
+IMPUTATIONS = ["fair_reg_99", "cca"]#, "fair_reg_95"]#, "mean", "mice_def", "coldel"]# , "reg"]
 IMPUTATION_COMBOS = [perm[0]+"|"+perm[1] for perm in permutations(IMPUTATIONS, 2)]
 
 SAVEPATH = "experiments/"
@@ -48,7 +49,9 @@ NAME_KEYS = {"coldel": "Column deletion",
              "log_reg": "Logistic Regression",
              "svm": "SVM",
              "knn": "KNN",
-             "rf_cat": "Random Forest"}
+             "rf_cat": "Random Forest",
+             "fair_reg_99": "Fairness aware imputation lambda = 0.99",
+             "fair_reg_95": "Fairness aware imputation lambda = 0.95"}
 
 font = {'family': 'normal',
         'weight': 'bold',
@@ -88,6 +91,7 @@ def splitter(data, response="score_factor"):
 
 
 def load_compas_alt():
+    #Consider using Haewon's version, seems better
     cols = ["gender_factor", "age_factor", "race_factor",
             "priors_count", "crime_factor", "two_year_recid"] # , "score_factor"]
     new_df = pd.read_csv("./formatted_recid.csv", usecols=cols)
@@ -143,6 +147,91 @@ def compas_cleaning(df):
         elif col_names[i] == "age_factor_Less than 25":
             col_names[i] = "age_factor_less_than_25"
     return new_df
+
+import sklearn.preprocessing as preprocessing
+from collections import namedtuple
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+
+
+def load_adult(smaller=False, scaler=True):
+    '''
+    Borrowed from https://github.com/haewon55/FairMIPForest
+    :param smaller: selecting this flag it is possible to generate a smaller version of the training and test sets.
+    :param scaler: if True it applies a StandardScaler() (from sklearn.preprocessing) to the data.
+    :return: train and test data.
+    Features of the Adult dataset:
+    0. age: continuous.
+    1. workclass: Private, Self-emp-not-inc, Self-emp-inc, Federal-gov, Local-gov, State-gov, Without-pay, Never-worked.
+    2. fnlwgt: continuous.
+    3. education: Bachelors, Some-college, 11th, HS-grad, Prof-school, Assoc-acdm, Assoc-voc, 9th, 7th-8th, 12th,
+    Masters, 1st-4th, 10th, Doctorate, 5th-6th, Preschool.
+    4. education-num: continuous.
+    5. marital-status: Married-civ-spouse, Divorced, Never-married, Separated, Widowed,
+    Married-spouse-absent, Married-AF-spouse.
+    6. occupation: Tech-support, Craft-repair, Other-service, Sales, Exec-managerial, Prof-specialty,
+    Handlers-cleaners, Machine-op-inspct, Adm-clerical, Farming-fishing, Transport-moving, Priv-house-serv,
+    Protective-serv, Armed-Forces.
+    7. relationship: Wife, Own-child, Husband, Not-in-family, Other-relative, Unmarried.
+    8. race: White, Asian-Pac-Islander, Amer-Indian-Eskimo, Other, Black.
+    9. sex: Female, Male.
+    10. capital-gain: continuous.
+    11. capital-loss: continuous.
+    12. hours-per-week: continuous.
+    13. native-country: United-States, Cambodia, England, Puerto-Rico, Canada, Germany, Outlying-US(Guam-USVI-etc),
+    India, Japan, Greece, South, China, Cuba, Iran, Honduras, Philippines, Italy, Poland, Jamaica, Vietnam, Mexico,
+    Portugal, Ireland, France, Dominican-Republic, Laos, Ecuador, Taiwan, Haiti, Columbia, Hungary, Guatemala,
+    Nicaragua, Scotland, Thailand, Yugoslavia, El-Salvador, Trinadad&Tobago, Peru, Hong, Holand-Netherlands.
+    (14. label: <=50K, >50K)
+    '''
+    pwd = '../data/'
+    data = pd.read_csv(
+        pwd+'adult.data',
+        names=[
+            "age", "workclass", "fnlwgt", "education", "education-num", "marital-status",
+            "occupation", "relationship", "race", "gender", "capital-gain", "capital-loss",
+            "hours-per-week", "native-country", "income"]
+            )
+    len_train = len(data.values[:, -1])
+    data_test = pd.read_csv(
+        pwd+'adult.test',
+        names=[
+            "age", "workclass", "fnlwgt", "education", "education-num", "marital-status",
+            "occupation", "relationship", "race", "gender", "capital-gain", "capital-loss",
+            "hours-per-week", "native-country", "income"]
+    )
+    data = pd.concat([data, data_test])
+    # Considering the relative low portion of missing data, we discard rows with missing data
+    domanda = data["workclass"][4].values[1]
+    data = data[data["workclass"] != domanda]
+    data = data[data["occupation"] != domanda]
+    data = data[data["native-country"] != domanda]
+    # Here we apply discretisation on column marital_status
+    data.replace(['Divorced', 'Married-AF-spouse',
+                  'Married-civ-spouse', 'Married-spouse-absent',
+                  'Never-married', 'Separated', 'Widowed'],
+                 ['not married', 'married', 'married', 'married',
+                  'not married', 'not married', 'not married'], inplace=True)
+    # categorical fields
+    category_col = ['workclass', 'race', 'education', 'marital-status', 'occupation',
+                    'relationship', 'gender', 'native-country', 'income']
+    for col in category_col:
+        b, c = np.unique(data[col], return_inverse=True)
+        data[col] = c
+    
+    data, data_test = data.drop(columns=['fnlwgt']), data_test.drop(columns=['fnlwgt'])
+    
+    datamat = data.values
+    target = np.array([-1.0 if val == 0 else 1.0 for val in np.array(datamat)[:, -1]])
+    datamat = datamat[:, :-1]
+    
+    if scaler:
+        scaler = MinMaxScaler()
+        scaler.fit(datamat)
+        data.iloc[:, :-1] = scaler.fit_transform(datamat)
+#         data.iloc[:, -1] = target
+
+
+    return {"train": data.iloc[:len_train], "test": data.iloc[len_train:]}
 
 
 def load_compas(version="standard"):
@@ -390,7 +479,7 @@ def regression_imputer(full_data, missing):
 
 
 @ignore_warnings(category=ConvergenceWarning)
-def impute(dataframe, missing_col, impute="cca"):
+def impute(dataframe, missing_col,sensitive_col, impute="cca"):
     #TODO add knn imputation
     data = dataframe.copy()
     if impute == "cca":
@@ -438,6 +527,29 @@ def impute(dataframe, missing_col, impute="cca"):
         return data.drop(missing_col, axis=1)
     elif impute == "knn":
         pass
+    elif impute=="fair_reg_95":
+        flr = FairLogisticRegression(fairness_metric = "eo_sum")
+        obs_data = data.dropna()
+        x = obs_data.drop(missing_col, axis = 1)
+        y = obs_data[missing_col]
+        z = obs_data[sensitive_col]
+        flr.fit(x,y,z, epochs=50)
+        
+        x_miss = data[data[missing_col].isnull()].drop(missing_col,axis = 1)
+        y_hat = flr.predict(x_miss)
+        data.loc[data[missing_col].isnull(),missing_col] = y_hat 
+        
+    elif impute =="fair_reg_99":
+        flr = FairLogisticRegression(fairness_metric = "eo_sum",lam = 0.99)
+        obs_data = data.dropna()
+        x = obs_data.drop(missing_col, axis = 1)
+        y = obs_data[missing_col]
+        z = obs_data[sensitive_col]
+        flr.fit(x,y,z, epochs=50)
+        
+        x_miss = data[data[missing_col].isnull()].drop(missing_col,axis = 1)
+        y_hat = flr.predict(x_miss)
+        data.loc[data[missing_col].isnull(),missing_col] = y_hat 
     return data
 
 
@@ -491,8 +603,8 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
             data_mar_missing = data_remover_cat(
                 train, missing, p, missing="mar")
             for imp in IMPUTATIONS:  # , "reg"]:
-                data_mcar = impute(data_mcar_missing, missing, impute=imp)
-                data_mar = impute(data_mar_missing, missing, impute=imp)
+                data_mcar = impute(data_mcar_missing, missing,sensitive_col=sensitive, impute=imp)
+                data_mar = impute(data_mar_missing, missing,sensitive_col=sensitive, impute=imp)
                 for m in models:
                     if imp == "coldel" and missing == sensitive:
                         continue
@@ -598,7 +710,7 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
     
     #Averaging
     for key, value in avg.items():
-        avg[key] = [int(n) for n in np.mean(value, axis = 0)]
+        avg[key] = [float(n) for n in np.mean(value, axis = 0)]
 
 
     key_combos = {"mar":[], "mcar":[]}

@@ -4,8 +4,11 @@ from tqdm import tqdm
 from autograd import grad
 from sklearn.metrics import accuracy_score
 
-class LogisticRegression():
-    def __init__(self, fairness_metric="spd", lam = 0.95):
+"""
+Based on https://github.com/casperbh96/Logistic-Regression-From-Scratch
+"""
+class FairLogisticRegression():
+    def __init__(self, fairness_metric="eo_sum", lam = 0.95):
         self.fairness_metric = fairness_metric
         self.losses = []
         self.train_accuracies = []
@@ -21,7 +24,7 @@ class LogisticRegression():
         self.weights = np.zeros(x.shape[1], dtype='float')
         self.bias = 0
 
-        for i in tqdm(range(epochs)):
+        for i in range(epochs):
             x_dot_weights = np.matmul(self.weights, x.transpose()) + self.bias
             pred = self._sigmoid(x_dot_weights)
             loss = self.compute_loss(y, pred)
