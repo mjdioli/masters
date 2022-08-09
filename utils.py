@@ -37,7 +37,8 @@ MODELS = {"log_reg": LogisticRegression(random_state=0, max_iter=500),
           "rf_cat": RandomForestClassifier(max_depth=4, random_state=0),
           "rf_cont": RandomForestRegressor(max_depth=4, random_state=0)}
 
-IMPUTATIONS = ["fair_reg_99", "cca"]#, "fair_reg_95"]#, "mean", "mice_def", "coldel"]# , "reg"]
+IMPUTATIONS = ["fair_reg_99", "cca", "fair_reg_95", "mean", "mice_def", "coldel"]# , "reg"]
+#IMPUTATIONS = ["cca", "mean", "mice_def", "coldel"]# , "reg"]
 IMPUTATION_COMBOS = [perm[0]+"|"+perm[1] for perm in permutations(IMPUTATIONS, 2)]
 
 SAVEPATH = "experiments/"
@@ -84,7 +85,7 @@ def splitter(data, response="score_factor"):
     x = data.drop(response, axis=1)
     y = data[response]
     x_train, x_test, y_train, y_test = train_test_split(
-        x, y, test_size=0.33, random_state=42)
+        x, y, test_size=0.33)
     x_train[response] = y_train
     x_test[response] = y_test
     return {"train": x_train, "test": x_test}
@@ -528,12 +529,12 @@ def impute(dataframe, missing_col,sensitive_col, impute="cca"):
     elif impute == "knn":
         pass
     elif impute=="fair_reg_95":
-        flr = FairLogisticRegression(fairness_metric = "eo_sum")
+        flr = FairLogisticRegression(fairness_metric = "eo_sum",lam = 0.95)
         obs_data = data.dropna()
         x = obs_data.drop(missing_col, axis = 1)
         y = obs_data[missing_col]
         z = obs_data[sensitive_col]
-        flr.fit(x,y,z, epochs=50)
+        flr.fit(x,y,z, epochs=100)
         
         x_miss = data[data[missing_col].isnull()].drop(missing_col,axis = 1)
         y_hat = flr.predict(x_miss)
@@ -545,7 +546,7 @@ def impute(dataframe, missing_col,sensitive_col, impute="cca"):
         x = obs_data.drop(missing_col, axis = 1)
         y = obs_data[missing_col]
         z = obs_data[sensitive_col]
-        flr.fit(x,y,z, epochs=50)
+        flr.fit(x,y,z, epochs=100)
         
         x_miss = data[data[missing_col].isnull()].drop(missing_col,axis = 1)
         y_hat = flr.predict(x_miss)
@@ -577,8 +578,9 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
     # print("class_0",sum(class_0_test[pred]))
     # print("class_1",sum(class_1_test[pred]))
     metrics = ["spd", "eo0","eo1", "eosum", "pp", "acc", "tpr0", "tpr1", "tnr0", "tnr1"]
-    delta = {metr:{m:{i:[] for i in IMPUTATIONS} for m in models} for metr in metrics}
-    full_results = {"delta": {"mar":delta.copy(), "mcar": delta.copy()}}
+    #delta = {metr:{m:{i:[] for i in IMPUTATIONS} for m in models} for metr in metrics}
+    full_results = {"delta": {"mar":{metr:{m:{i:[] for i in IMPUTATION_COMBOS} for m in models} for metr in metrics},
+                              "mcar": {metr:{m:{i:[] for i in IMPUTATION_COMBOS} for m in models} for metr in metrics}}}
     
     if percentiles is None:
         percentiles = [i for i in range(
@@ -594,8 +596,8 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
         
         results = {"mar": {metr: {m: {i: [] for i in IMPUTATIONS} for m in models} for metr in metrics},
                    "mcar": {metr: {m: {i: [] for i in IMPUTATIONS} for m in models} for metr in metrics}}
-        results["mar"]["delta"] = {metr: {m: {i: [] for i in IMPUTATION_COMBOS} for m in models} for metr in metrics}
-        results["mcar"]["delta"] = {metr: {m: {i: [] for i in IMPUTATION_COMBOS} for m in models} for metr in metrics}
+        #results["mar"]["delta"] = {metr: {m: {i: [] for i in IMPUTATION_COMBOS} for m in models} for metr in metrics}
+        #results["mcar"]["delta"] = {metr: {m: {i: [] for i in IMPUTATION_COMBOS} for m in models} for metr in metrics}
         #print("results", results)
         for p in percentiles:   
             data_mcar_missing = data_remover_cat(
@@ -713,34 +715,31 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
         avg[key] = [float(n) for n in np.mean(value, axis = 0)]
 
 
-    key_combos = {"mar":[], "mcar":[]}
+    mar_vls = []
+    for i, val1 in enumerate(temp_delta["mar|spd|log_reg|cca"]):
+        for j, val2 in enumerate(temp_delta["mar|spd|log_reg|mean"]):
+            mar_vls.append(val1-val2)
+    mcar_vls = []
+    for i, val1 in enumerate(temp_delta["mcar|spd|log_reg|cca"]):
+        for j, val2 in enumerate(temp_delta["mcar|spd|log_reg|mean"]):
+            mcar_vls.append(val1-val2)
     for key1, value1 in temp_delta.items():
         for key2, value2 in temp_delta.items():
-            
             if key1==key2:
                 continue
             keys1 = key1.split("|")
             miss1, metric1, m1, imp1 =keys1[0],keys1[1],keys1[2],keys1[3]
             keys2 = key2.split("|")
             miss2, metric2, m2, imp2 =keys2[0],keys2[1],keys2[2],keys2[3]
-            if miss1!=miss2 or metric1!=metric2 or m1!=m2:
+            if (miss1!=miss2) or (metric1!=metric2) or (m1!=m2) or (imp1==imp2):
                 continue
-            
-            if imp1+imp2 in key_combos[miss1] or imp2+imp1 in key_combos[miss1]:
-                continue
-            else:
-                #print(imp1+imp2)
-                key_combos[miss1].append(imp1+imp2)
-                key_combos[miss1].append(imp2+imp1)
-                #TODO FIX HERE
-                temp_results = []
-                for i, v1 in enumerate(value1):
-                    for j, v2 in enumerate(value2):
-                        if i==j:
-                            continue
-                        temp_results.append(v1-v2)
-                print("TEMP_RESULTS"+miss1+imp1+imp2, len(temp_results))
-                full_results["delta"][miss1][metric1][m1][imp1+"|"+imp2] = temp_results.copy()
+                
+            #TODO FIX HERE
+            #done_keys.append(miss1+metric1+m1+imp1+"|"+imp2)
+            temp_differences = []
+            for v1 in value1:
+                temp_differences+=[v1-v2 for v2 in value2]
+            full_results["delta"][miss1][metric1][m1][imp1+"|"+imp2] = temp_differences
     try:
         save("./data/", "testresults.pickle", results)
     except Exception as e:
@@ -758,16 +757,19 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
     #b = differencing_models(full_results, "mcar","acc","log_reg","cca")
     #print(a==b)
     #print("a: ", a, "\n", "b: ", b)
-    print(metrics)
+    #print(metrics)
     for miss in ["mcar", "mar"]:
         for m in models:
             for metric in metrics:
                 for imp1 in IMPUTATIONS:
                     for imp2 in IMPUTATIONS:
-                        if imp1==imp2 or imp1+"|"+imp2 not in full_results["delta"][miss][metric][m]:
+                        if imp1==imp2 or (imp1+"|"+imp2 not in full_results["delta"][miss][metric][m]) or (imp2+"|"+imp1 not in full_results["delta"][miss][metric][m]):
                             continue
                         #TODO fix differencing step
                         #print("Missingness", miss, "IMP", imp1+"|"+imp2, "METRIC", metric)
+                        if full_results["delta"]["mar"][metric][m][imp1+"|"+imp2] == full_results["delta"]["mar"][metric][m][imp1+"|"+imp2]:
+                            #print("SAME")
+                            pass
                         plotting_differencing(
                             bucketiser(
                                 differencing_models(full_results, miss,metric,m,imp1+"|"+imp2)

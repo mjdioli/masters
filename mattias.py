@@ -1,6 +1,7 @@
 import numpy as np
 import utils
 import pandas as pd
+import os
 
 synth_regular = utils.load_synthetic()
 compas = utils.load_compas_alt()
@@ -26,5 +27,7 @@ for miss in missing:
         
 import json
 from pathlib import Path
-with open(Path("raw_data/test.json"), 'w') as f:
+if not os.path.isdir(Path("raw_data/")):
+    os.mkdir(Path("raw_data/"))
+with open(Path("raw_data/marius_data.json"), 'w') as f:
     json.dump(all_results, f)
