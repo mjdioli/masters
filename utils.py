@@ -1,5 +1,3 @@
-from email.policy import default
-from operator import imod
 from urllib import response
 from fair_logistic_reg import FairLogisticRegression
 from sklearn.svm import LinearSVC
