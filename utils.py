@@ -36,7 +36,7 @@ MODELS = {"log_reg": LogisticRegression(random_state=0, max_iter=500),
           "rf_cont": RandomForestRegressor(max_depth=4, random_state=0)}
 
 IMPUTATIONS = ["fair_reg_99", "cca", "fair_reg_95", "mean", "mice_def", "coldel"]# , "reg"]
-#IMPUTATIONS = ["cca", "mean", "mice_def", "coldel"]# , "reg"]
+#IMPUTATIONS = ["cca", "mean"]#, "mice_def", "coldel"]# , "reg"]
 IMPUTATION_COMBOS = [perm[0]+"|"+perm[1] for perm in permutations(IMPUTATIONS, 2)]
 
 SAVEPATH = "experiments/"
@@ -568,7 +568,7 @@ def load_data(dataset="compas"):
 
 @ignore_warnings(category=ConvergenceWarning)
 def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_type: str = "cat",
-               percentiles=None, n_runs=1):
+               percentiles=None, n_runs=1, differencing = False):
     if pred_var_type == "cat":
         models = ["log_reg", "rf_cat", "svm", "knn"]
     else:
@@ -744,38 +744,41 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
         print("Couldn't save data with exception: ", e)
 
     #Plotting differencings
-    key = "recid" if data == "compas" else "synth"
-    savepath = SAVEPATH+missing+"_"+sensitive+"_"+key+"/"
-    if not os.path.isdir(Path(savepath)):
-        os.mkdir(Path(savepath))
-    if not os.path.isdir(Path(savepath+"/differencing/")):
-        os.mkdir(Path(savepath+"/differencing/"))
-    savepath = savepath+"differencing/" #TODO investigate if savepath is correct
-    #a = differencing_models(full_results, "mar","acc","log_reg","cca")
-    #b = differencing_models(full_results, "mcar","acc","log_reg","cca")
-    #print(a==b)
-    #print("a: ", a, "\n", "b: ", b)
-    #print(metrics)
-    for miss in ["mcar", "mar"]:
-        for m in models:
-            for metric in metrics:
-                for imp1 in IMPUTATIONS:
-                    for imp2 in IMPUTATIONS:
-                        if imp1==imp2 or (imp1+"|"+imp2 not in full_results["delta"][miss][metric][m]) or (imp2+"|"+imp1 not in full_results["delta"][miss][metric][m]):
-                            continue
-                        #TODO fix differencing step
-                        #print("Missingness", miss, "IMP", imp1+"|"+imp2, "METRIC", metric)
-                        if full_results["delta"]["mar"][metric][m][imp1+"|"+imp2] == full_results["delta"]["mar"][metric][m][imp1+"|"+imp2]:
-                            #print("SAME")
-                            pass
-                        plotting_differencing(
-                            bucketiser(
-                                differencing_models(full_results, miss,metric,m,imp1+"|"+imp2)
-                                ,0.3),
-                            title = "Differencing of " + NAME_KEYS[m] + " with " + NAME_KEYS[imp1] + "|"+ NAME_KEYS[imp2] + " measured by " + metric,
-                            savepath= savepath+miss+"_"+m+"_"+imp1+"_"+imp2+"_"+metric+".png")
-    
-    #Deleting differencings after they are no longer needed
+    if differencing:
+        key = "recid" if data == "compas" else "synth"
+        if not os.path.isdir(Path(SAVEPATH)):
+            os.mkdir(Path(SAVEPATH))
+        savepath = SAVEPATH+missing+"_"+sensitive+"_"+key+"/"
+        if not os.path.isdir(Path(savepath)):
+            os.mkdir(Path(savepath))
+        if not os.path.isdir(Path(savepath+"/differencing/")):
+            os.mkdir(Path(savepath+"/differencing/"))
+        savepath = savepath+"differencing/" #TODO investigate if savepath is correct
+        #a = differencing_models(full_results, "mar","acc","log_reg","cca")
+        #b = differencing_models(full_results, "mcar","acc","log_reg","cca")
+        #print(a==b)
+        #print("a: ", a, "\n", "b: ", b)
+        #print(metrics)
+        for miss in ["mcar", "mar"]:
+            for m in models:
+                for metric in metrics:
+                    for imp1 in IMPUTATIONS:
+                        for imp2 in IMPUTATIONS:
+                            if imp1==imp2 or (imp1+"|"+imp2 not in full_results["delta"][miss][metric][m]) or (imp2+"|"+imp1 not in full_results["delta"][miss][metric][m]):
+                                continue
+                            #TODO fix differencing step
+                            #print("Missingness", miss, "IMP", imp1+"|"+imp2, "METRIC", metric)
+                            if full_results["delta"]["mar"][metric][m][imp1+"|"+imp2] == full_results["delta"]["mar"][metric][m][imp1+"|"+imp2]:
+                                #print("SAME")
+                                pass
+                            plotting_differencing(
+                                bucketiser(
+                                    differencing_models(full_results, miss,metric,m,imp1+"|"+imp2)
+                                    ,0.3),
+                                title = "Differencing of " + NAME_KEYS[m] + " with " + NAME_KEYS[imp1] + "|"+ NAME_KEYS[imp2] + " measured by " + metric,
+                                savepath= savepath+miss+"_"+m+"_"+imp1+"_"+imp2+"_"+metric+".png")
+        
+        #Deleting differencings after they are no longer needed
     del full_results["delta"]
     return {"Full data": full_results, "Averaged results": avg}
 
