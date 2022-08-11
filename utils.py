@@ -151,6 +151,17 @@ import sklearn.preprocessing as preprocessing
 from collections import namedtuple
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
+def balance_data(df, attr, major=1): 
+    """Borrowed from https://github.com/haewon55/FairMIPForest
+    """
+    sample_size = len(df[df[attr] == major]) - len(df[df[attr]==(1-major)])
+    if sample_size < 0:
+        raise ValueError
+    
+    np.random.seed(0)
+    drop_idx = np.random.choice(df[df[attr]==major].index, sample_size, replace=False)
+    return df.drop(drop_idx)
+
 
 def load_adult(smaller=False, scaler=True):
     '''
@@ -182,55 +193,60 @@ def load_adult(smaller=False, scaler=True):
     Nicaragua, Scotland, Thailand, Yugoslavia, El-Salvador, Trinadad&Tobago, Peru, Hong, Holand-Netherlands.
     (14. label: <=50K, >50K)
     '''
-    pwd = '../data/'
+    pwd = 'data/'
     data = pd.read_csv(
-        pwd+'adult.data',
-        names=[
-            "age", "workclass", "fnlwgt", "education", "education-num", "marital-status",
+        Path(pwd+'adult.data'),
+        names=["age", "workclass", "fnlwgt", "education", "education-num", "marital-status",
             "occupation", "relationship", "race", "gender", "capital-gain", "capital-loss",
             "hours-per-week", "native-country", "income"]
             )
     len_train = len(data.values[:, -1])
     data_test = pd.read_csv(
         pwd+'adult.test',
-        names=[
-            "age", "workclass", "fnlwgt", "education", "education-num", "marital-status",
+        names=["age", "workclass", "fnlwgt", "education", "education-num", "marital-status",
             "occupation", "relationship", "race", "gender", "capital-gain", "capital-loss",
             "hours-per-week", "native-country", "income"]
     )
+    ordering = ["age", "fnlwgt", "education", "education-num",
+            "occupation", "relationship",  "capital-gain", "capital-loss",
+            "hours-per-week", "native-country","race", "gender","marital-status","workclass", "income"]
     data = pd.concat([data, data_test])
+    data = data[ordering]
     # Considering the relative low portion of missing data, we discard rows with missing data
     domanda = data["workclass"][4].values[1]
     data = data[data["workclass"] != domanda]
     data = data[data["occupation"] != domanda]
     data = data[data["native-country"] != domanda]
-    # Here we apply discretisation on column marital_status
-    data.replace(['Divorced', 'Married-AF-spouse',
-                  'Married-civ-spouse', 'Married-spouse-absent',
-                  'Never-married', 'Separated', 'Widowed'],
-                 ['not married', 'married', 'married', 'married',
-                  'not married', 'not married', 'not married'], inplace=True)
+    #print("FIRST",data.head(2))
+    #Convert race to simply white or non-white
+    data["race"] = data["race"].apply(lambda x: 0 if x==" White" else 1)
+    data["workclass"] = data["workclass"].apply(lambda x: 0 if "gov" in x else 1)
+
+    data["marital-status"] = data["marital-status"].apply(lambda x: 1 if "arried" in x else 0)
     # categorical fields
-    category_col = ['workclass', 'race', 'education', 'marital-status', 'occupation',
+    category_col = ['education',  'occupation',
                     'relationship', 'gender', 'native-country', 'income']
+
     for col in category_col:
         b, c = np.unique(data[col], return_inverse=True)
         data[col] = c
+
+    
     
     data, data_test = data.drop(columns=['fnlwgt']), data_test.drop(columns=['fnlwgt'])
     
     datamat = data.values
-    target = np.array([-1.0 if val == 0 else 1.0 for val in np.array(datamat)[:, -1]])
-    datamat = datamat[:, :-1]
+    datamat = datamat[:, :-5]
     
     if scaler:
         scaler = MinMaxScaler()
         scaler.fit(datamat)
-        data.iloc[:, :-1] = scaler.fit_transform(datamat)
-#         data.iloc[:, -1] = target
+        data.iloc[:, :-5] = scaler.fit_transform(datamat)
+#         data.iloc[:, -5] = target
 
 
-    return {"train": data.iloc[:len_train], "test": data.iloc[len_train:]}
+    #return {"train": data.iloc[:len_train], "test": data.iloc[len_train:]}
+    return splitter(data, response="income")
 
 
 def load_compas(version="standard"):
@@ -290,11 +306,12 @@ def load_synthetic(ver="recid_alt"):
         synth_cat_test = synth_cat.iloc[:round(0.333*size), :]
         synth_cat_train = synth_cat.iloc[round(0.333*size):, :]
     elif ver == "simple":
-        size = 50000
-        x_1 = np.random.normal(40, 10, size=size)
+        size = 10000
+        x_1 = np.random.binomial(1, 0.45, size=size)
         x_2 = np.random.binomial(1, 0.65, size=size)
-        y = np.around(sigmoid(x_1+x_2*20, alpha=50)).astype(int)
-        synth_cat = pd.DataFrame({"y": y, "x_1": x_1, "x_2": x_2})
+        x_3 = np.random.normal(0,1,size)
+        y = np.around(sigmoid(x_1*0.3+x_2+x_3, alpha=0.8)).astype(int)
+        synth_cat = pd.DataFrame({"y": y, "x_1": x_1, "x_2": x_2, "x_3": x_3})
         synth_cat_test = synth_cat.iloc[:round(0.333*size), :]
         synth_cat_train = synth_cat.iloc[round(0.333*size):, :]
     else:
@@ -558,6 +575,10 @@ def load_data(dataset="compas"):
         return load_compas_alt()
     elif dataset == "synthetic":
         return load_synthetic()
+    elif dataset == "adult":
+        return load_adult(scaler = True)
+    elif dataset == "simple":
+        return load_synthetic(ver = "simple")
     else:
         raise AttributeError("Wrong dataset name")
 
@@ -568,7 +589,7 @@ def load_data(dataset="compas"):
 
 @ignore_warnings(category=ConvergenceWarning)
 def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_type: str = "cat",
-               percentiles=None, n_runs=1, differencing = False):
+               percentiles=None, n_runs=1, differencing = True):
     if pred_var_type == "cat":
         models = ["log_reg", "rf_cat", "svm", "knn"]
     else:
@@ -710,42 +731,45 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
     
     #Averaging
     for key, value in avg.items():
-        avg[key] = [float(n) for n in np.mean(value, axis = 0)]
-
-
-    mar_vls = []
-    for i, val1 in enumerate(temp_delta["mar|spd|log_reg|cca"]):
-        for j, val2 in enumerate(temp_delta["mar|spd|log_reg|mean"]):
-            mar_vls.append(val1-val2)
-    mcar_vls = []
-    for i, val1 in enumerate(temp_delta["mcar|spd|log_reg|cca"]):
-        for j, val2 in enumerate(temp_delta["mcar|spd|log_reg|mean"]):
-            mcar_vls.append(val1-val2)
-    for key1, value1 in temp_delta.items():
-        for key2, value2 in temp_delta.items():
-            if key1==key2:
-                continue
-            keys1 = key1.split("|")
-            miss1, metric1, m1, imp1 =keys1[0],keys1[1],keys1[2],keys1[3]
-            keys2 = key2.split("|")
-            miss2, metric2, m2, imp2 =keys2[0],keys2[1],keys2[2],keys2[3]
-            if (miss1!=miss2) or (metric1!=metric2) or (m1!=m2) or (imp1==imp2):
-                continue
-                
-            #TODO FIX HERE
-            #done_keys.append(miss1+metric1+m1+imp1+"|"+imp2)
-            temp_differences = []
-            for v1 in value1:
-                temp_differences+=[v1-v2 for v2 in value2]
-            full_results["delta"][miss1][metric1][m1][imp1+"|"+imp2] = temp_differences
+        avg[key] = [float(n) for n in np.mean(value, axis = 0)]  
+          
+          
     try:
         save("./data/", "testresults.pickle", results)
     except Exception as e:
-        print("Couldn't save data with exception: ", e)
+        print("Couldn't save data with exception: ", e)  
+    if differencing:        
+        imp_keys = []
+        metric_keys = []
+        for key1, value1 in temp_delta.items():
+            for key2, value2 in temp_delta.items():
+                if key1==key2:
+                    continue
+                keys1 = key1.split("|")
+                miss1, metric1, m1, imp1 =keys1[0],keys1[1],keys1[2],keys1[3]
+                keys2 = key2.split("|")
+                miss2, metric2, m2, imp2 =keys2[0],keys2[1],keys2[2],keys2[3]
+                if (miss1!=miss2) or (metric1!=metric2) or (m1!=m2) or (imp1==imp2):
+                    continue
+                
+                if ((imp1+"|"+imp2 in imp_keys) or (imp2+"|"+imp1 in imp_keys)) and metric1 in metric_keys:
+                    continue
+                
+                imp_keys.append(imp2+"|"+imp1)
+                imp_keys.append(imp1+"|"+imp2)
+                metric_keys.append(metric1)
+                
+                #TODO FIX HERE
+                #done_keys.append(miss1+metric1+m1+imp1+"|"+imp2)
+                temp_differences = []
+                for v1 in value1:
+                    temp_differences+=[v1-v2 for v2 in value2]
+                full_results["delta"][miss1][metric1][m1][imp1+"|"+imp2] = temp_differences
+    
 
     #Plotting differencings
-    if differencing:
-        key = "recid" if data == "compas" else "synth"
+    
+        key = data
         if not os.path.isdir(Path(SAVEPATH)):
             os.mkdir(Path(SAVEPATH))
         savepath = SAVEPATH+missing+"_"+sensitive+"_"+key+"/"
