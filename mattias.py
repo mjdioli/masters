@@ -23,8 +23,8 @@ for miss in ["workclass", "gender", "relationship"]:
 
             all_results["Full data"][miss+"_"+sens+"_"+"adult"] = adult_results["Full data"]
             all_results["Averaged results"][miss+"_"+sens+"_"+"adult"] = adult_results["Averaged results"]
-        except:
-            print(miss,sens)
+        except Exception as e:
+            print("Exception:", e)
             continue
 
 
@@ -37,7 +37,8 @@ try:
                                 percentiles = percentiles, n_runs=RUNS, differencing=False)
     all_results["Full data"][miss+"_"+sensitive+"_"+"synth"] = synth_results["Full data"]
     all_results["Averaged results"][miss+"_"+sensitive+"_"+"synth"] = synth_results["Averaged results"]
-except:
+except Exception as e:
+    print("Exception:", e)
     print("SIMPLE SYNTH")
     pass
 
@@ -62,7 +63,8 @@ for miss in ["crime_factor", "is_Caucasian", "gender_factor"]:
             all_results["Averaged results"][miss+"_"+sensitive+"_"+"recid"] = recid_results["Averaged results"]
             all_results["Full data"][miss+"_"+sensitive+"_"+"synth_compas"] = synth_compas_results["Full data"]
             all_results["Averaged results"][miss+"_"+sensitive+"_"+"synth_compas"] = synth_compas_results["Averaged results"]
-        except:
+        except Exception as e:
+            print("Exception:", e)
             print(miss, sensitive)
             continue
         
