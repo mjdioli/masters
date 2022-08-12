@@ -18,7 +18,7 @@ for miss in ["workclass", "gender", "relationship"]:
     for sens in ["gender", "race"]:
         try:
             adult_results = utils.test_bench(data = "adult", pred = RESPONSE, missing = miss, sensitive=sens,
-                            percentiles = percentiles, n_runs=RUNS, differencing=True)
+                            percentiles = percentiles, n_runs=RUNS, differencing=False)
             
 
             all_results["Full data"][miss+"_"+sens+"_"+"adult"] = adult_results["Full data"]
@@ -34,7 +34,7 @@ try:
     sensitive = "x_1"
     RESPONSE = "y"
     synth_results = utils.test_bench(data = "simple", pred = RESPONSE, missing = miss, sensitive=sensitive,
-                                percentiles = percentiles, n_runs=RUNS, differencing=True)
+                                percentiles = percentiles, n_runs=RUNS, differencing=False)
     all_results["Full data"][miss+"_"+sensitive+"_"+"synth"] = synth_results["Full data"]
     all_results["Averaged results"][miss+"_"+sensitive+"_"+"synth"] = synth_results["Averaged results"]
 except:
@@ -55,9 +55,9 @@ for miss in ["crime_factor", "is_Caucasian", "gender_factor"]:
     for sensitive in ["is_Caucasian", "gender_factor"]:
         try:
             recid_results = utils.test_bench(data = "compas", pred = RESPONSE, missing = miss, sensitive=sensitive,
-                            percentiles = percentiles, n_runs=RUNS, differencing = True)
+                            percentiles = percentiles, n_runs=RUNS, differencing = False)
             synth_compas_results = utils.test_bench(data = "synthetic", pred = RESPONSE, missing = miss, sensitive=sensitive,
-                                percentiles = percentiles, n_runs=RUNS, differencing = True)
+                                percentiles = percentiles, n_runs=RUNS, differencing = False)
             all_results["Full data"][miss+"_"+sensitive+"_"+"recid"] = recid_results["Full data"]
             all_results["Averaged results"][miss+"_"+sensitive+"_"+"recid"] = recid_results["Averaged results"]
             all_results["Full data"][miss+"_"+sensitive+"_"+"synth_compas"] = synth_compas_results["Full data"]
