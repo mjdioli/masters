@@ -24,6 +24,7 @@ for miss in ["workclass", "gender", "relationship"]:
             all_results["Full data"][miss+"_"+sens+"_"+"adult"] = adult_results["Full data"]
             all_results["Averaged results"][miss+"_"+sens+"_"+"adult"] = adult_results["Averaged results"]
         except:
+            print(miss,sens)
             continue
 
 
@@ -37,6 +38,7 @@ try:
     all_results["Full data"][miss+"_"+sensitive+"_"+"synth"] = synth_results["Full data"]
     all_results["Averaged results"][miss+"_"+sensitive+"_"+"synth"] = synth_results["Averaged results"]
 except:
+    print("SIMPLE SYNTH")
     pass
 
 import json
@@ -61,6 +63,7 @@ for miss in ["crime_factor", "is_Caucasian", "gender_factor"]:
             all_results["Full data"][miss+"_"+sensitive+"_"+"synth_compas"] = synth_compas_results["Full data"]
             all_results["Averaged results"][miss+"_"+sensitive+"_"+"synth_compas"] = synth_compas_results["Averaged results"]
         except:
+            print(miss, sensitive)
             continue
         
 
