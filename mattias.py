@@ -16,22 +16,28 @@ RUNS = 5
 RESPONSE = "income"
 for miss in ["workclass", "gender", "relationship"]:
     for sens in ["gender", "race"]:
-        adult_results = utils.test_bench(data = "adult", pred = RESPONSE, missing = miss, sensitive=sens,
-                        percentiles = percentiles, n_runs=RUNS, differencing=True)
-        
+        try:
+            adult_results = utils.test_bench(data = "adult", pred = RESPONSE, missing = miss, sensitive=sens,
+                            percentiles = percentiles, n_runs=RUNS, differencing=True)
+            
 
-        all_results["Full data"][miss+"_"+sens+"_"+"adult"] = adult_results["Full data"]
-        all_results["Averaged results"][miss+"_"+sens+"_"+"adult"] = adult_results["Averaged results"]
+            all_results["Full data"][miss+"_"+sens+"_"+"adult"] = adult_results["Full data"]
+            all_results["Averaged results"][miss+"_"+sens+"_"+"adult"] = adult_results["Averaged results"]
+        except:
+            continue
 
 
 #Simple synthetic
-miss = "x_2"
-sensitive = "x_1"
-RESPONSE = "y"
-synth_results = utils.test_bench(data = "simple", pred = RESPONSE, missing = miss, sensitive=sensitive,
-                            percentiles = percentiles, n_runs=RUNS, differencing=True)
-all_results["Full data"][miss+"_"+sensitive+"_"+"synth"] = synth_results["Full data"]
-all_results["Averaged results"][miss+"_"+sensitive+"_"+"synth"] = synth_results["Averaged results"]
+try:
+    miss = "x_2"
+    sensitive = "x_1"
+    RESPONSE = "y"
+    synth_results = utils.test_bench(data = "simple", pred = RESPONSE, missing = miss, sensitive=sensitive,
+                                percentiles = percentiles, n_runs=RUNS, differencing=True)
+    all_results["Full data"][miss+"_"+sensitive+"_"+"synth"] = synth_results["Full data"]
+    all_results["Averaged results"][miss+"_"+sensitive+"_"+"synth"] = synth_results["Averaged results"]
+except:
+    pass
 
 import json
 from pathlib import Path
@@ -45,18 +51,17 @@ with open(Path("raw_data/intermediate.json"), 'w') as f:
 RESPONSE = "two_year_recid"
 for miss in ["crime_factor", "is_Caucasian", "gender_factor"]:
     for sensitive in ["is_Caucasian", "gender_factor"]:
-        #try:
-        recid_results = utils.test_bench(data = "compas", pred = RESPONSE, missing = miss, sensitive=sensitive,
-                        percentiles = percentiles, n_runs=RUNS, differencing = True)
-        synth_compas_results = utils.test_bench(data = "synthetic", pred = RESPONSE, missing = miss, sensitive=sensitive,
+        try:
+            recid_results = utils.test_bench(data = "compas", pred = RESPONSE, missing = miss, sensitive=sensitive,
                             percentiles = percentiles, n_runs=RUNS, differencing = True)
-        #TODO and remember to fix data v_recid_results = utils.test_bench(train = compas["standard"]["train"],test = compas["standard"]["test"], pred = RESPONSE, missing = miss, sensitive=sensitive,
-                        #percentiles = percentiles)
-        #all_results[miss+"_"+sensitive+"_"+"synth"] = synth_results 
-        all_results["Full data"][miss+"_"+sensitive+"_"+"recid"] = recid_results["Full data"]
-        all_results["Averaged results"][miss+"_"+sensitive+"_"+"recid"] = recid_results["Averaged results"]
-        all_results["Full data"][miss+"_"+sensitive+"_"+"synth_compas"] = synth_compas_results["Full data"]
-        all_results["Averaged results"][miss+"_"+sensitive+"_"+"synth_compas"] = synth_compas_results["Averaged results"]
+            synth_compas_results = utils.test_bench(data = "synthetic", pred = RESPONSE, missing = miss, sensitive=sensitive,
+                                percentiles = percentiles, n_runs=RUNS, differencing = True)
+            all_results["Full data"][miss+"_"+sensitive+"_"+"recid"] = recid_results["Full data"]
+            all_results["Averaged results"][miss+"_"+sensitive+"_"+"recid"] = recid_results["Averaged results"]
+            all_results["Full data"][miss+"_"+sensitive+"_"+"synth_compas"] = synth_compas_results["Full data"]
+            all_results["Averaged results"][miss+"_"+sensitive+"_"+"synth_compas"] = synth_compas_results["Averaged results"]
+        except:
+            continue
         
 
 with open(Path("raw_data/marius_data_2.json"), 'w') as f:

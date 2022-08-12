@@ -549,7 +549,7 @@ def impute(dataframe, missing_col,sensitive_col, impute="cca"):
         x = obs_data.drop(missing_col, axis = 1)
         y = obs_data[missing_col]
         z = obs_data[sensitive_col]
-        flr.fit(x,y,z, epochs=100)
+        flr.fit(x,y,z, epochs=50)
         
         x_miss = data[data[missing_col].isnull()].drop(missing_col,axis = 1)
         y_hat = flr.predict(x_miss)
@@ -561,7 +561,7 @@ def impute(dataframe, missing_col,sensitive_col, impute="cca"):
         x = obs_data.drop(missing_col, axis = 1)
         y = obs_data[missing_col]
         z = obs_data[sensitive_col]
-        flr.fit(x,y,z, epochs=100)
+        flr.fit(x,y,z, epochs=50)
         
         x_miss = data[data[missing_col].isnull()].drop(missing_col,axis = 1)
         y_hat = flr.predict(x_miss)
