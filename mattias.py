@@ -7,12 +7,12 @@ synth_regular = utils.load_synthetic()
 compas = utils.load_compas_alt()
 
 
-percentiles = [0,5,10]+[p for p in range(20,80, 10)]
+percentiles = [0,5,10]+[p for p in range(20,60, 10)] + [70,90]
 #percentiles = [p for p in range(60,80, 10)]
-
-#Adult dataset
 all_results = {"Full data": {}, "Averaged results": {} }
-RUNS = 5
+RUNS = 10
+#Adult dataset
+"""
 RESPONSE = "income"
 for miss in ["workclass", "gender", "relationship"]:
     for sens in ["gender", "race"]:
@@ -25,7 +25,7 @@ for miss in ["workclass", "gender", "relationship"]:
             all_results["Averaged results"][miss+"_"+sens+"_"+"adult"] = adult_results["Averaged results"]
         except Exception as e:
             print("Exception:", e)
-            continue
+            continue"""
 
 
 #Simple synthetic
@@ -46,13 +46,13 @@ import json
 from pathlib import Path
 if not os.path.isdir(Path("raw_data/")):
     os.mkdir(Path("raw_data/"))
-with open(Path("raw_data/intermediate.json"), 'w') as f:
+with open(Path("raw_data/simple_intermediate.json"), 'w') as f:
     json.dump(all_results, f)
     
     
 #Compas
 RESPONSE = "two_year_recid"
-for miss in ["crime_factor", "is_Caucasian", "gender_factor"]:
+for miss in ["priors_count", "crime_factor", "is_Caucasian", "gender_factor"]:
     for sensitive in ["is_Caucasian", "gender_factor"]:
         try:
             recid_results = utils.test_bench(data = "compas", pred = RESPONSE, missing = miss, sensitive=sensitive,
@@ -69,5 +69,5 @@ for miss in ["crime_factor", "is_Caucasian", "gender_factor"]:
             continue
         
 
-with open(Path("raw_data/marius_data_2.json"), 'w') as f:
+with open(Path("raw_data/marius_data_full.json"), 'w') as f:
     json.dump(all_results, f)

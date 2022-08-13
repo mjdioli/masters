@@ -8,7 +8,7 @@ from sklearn.metrics import accuracy_score
 Based on https://github.com/casperbh96/Logistic-Regression-From-Scratch
 """
 class FairLogisticRegression():
-    def __init__(self, fairness_metric="eo_sum", lam = 0.95):
+    def __init__(self, fairness_metric="eo_sum", lam = 0.983):
         self.fairness_metric = fairness_metric
         self.losses = []
         self.train_accuracies = []
@@ -24,14 +24,19 @@ class FairLogisticRegression():
         self.weights = np.zeros(x.shape[1], dtype='float')
         self.bias = 0
 
-        for i in range(epochs):
+        for i in tqdm(range(epochs)):
             x_dot_weights = np.matmul(self.weights, x.transpose()) + self.bias
             pred = self._sigmoid(x_dot_weights)
             loss = self.compute_loss(y, pred)
             error_w, error_b = self.compute_gradients(x, y, pred)
             fair_error_w = self.fair_grad(self.weights, x.transpose(),y,z,self.fairness_metric)
             #print("difference_error: ", error_w-fair_error_w)
+            #Scaling the fairness error
+            #fair_error_w = fair_error_w*(np.linalg.norm(error_w)/np.linalg.norm(fair_error_w))
             error_w = (1-self.lam)*error_w + self.lam*fair_error_w
+            if np.linalg.norm(error_w) < 0.01:
+                print("BREAK AT EPOCH ", i)
+                break
             
             self.update_model_parameters(error_w, error_b)
 
@@ -84,6 +89,7 @@ class FairLogisticRegression():
         z0_y1 = [y_hat for y_hat, z, y in zip(
             pred, prot, true) if z == 0 and y == 1]
         return abs(sum(z1_y1)-sum(z0_y1)) + abs(sum(z1_y0)-sum(z0_y0))
+        #return abs(sum(z1_y1)/len(z1_y1)-sum(z0_y1)/len(z0_y1)) + abs(sum(z1_y0)/len(z1_y0)-sum(z0_y0)/len(z0_y0))
     
     def fairness(self, weights, x_transpose, true, prot, metric="spd"):
         x_dot_weights = np.matmul(weights, x_transpose) + self.bias
@@ -99,7 +105,7 @@ class FairLogisticRegression():
     
         
     def update_model_parameters(self, error_w, error_b):
-        self.weights = self.weights - 0.1 * error_w
+        self.weights = self.weights - 0.1* error_w
         self.bias = self.bias - 0.1 * error_b
 
     def predict(self, x):

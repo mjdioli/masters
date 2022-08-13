@@ -35,7 +35,7 @@ MODELS = {"log_reg": LogisticRegression(random_state=0, max_iter=500),
           "rf_cat": RandomForestClassifier(max_depth=4, random_state=0),
           "rf_cont": RandomForestRegressor(max_depth=4, random_state=0)}
 
-IMPUTATIONS = ["fair_reg_99", "cca", "fair_reg_95", "mean", "mice_def", "coldel"]# , "reg"]
+IMPUTATIONS = ["fair_reg_995", "cca", "fair_reg_985", "mean", "mice_def", "coldel"]# , "reg"]
 #IMPUTATIONS = ["cca", "mean"]#, "mice_def", "coldel"]# , "reg"]
 IMPUTATION_COMBOS = [perm[0]+"|"+perm[1] for perm in permutations(IMPUTATIONS, 2)]
 
@@ -49,8 +49,8 @@ NAME_KEYS = {"coldel": "Column deletion",
              "svm": "SVM",
              "knn": "KNN",
              "rf_cat": "Random Forest",
-             "fair_reg_99": "Fairness aware imputation lambda = 0.99",
-             "fair_reg_95": "Fairness aware imputation lambda = 0.95"}
+             "fair_reg_995": "Fairness aware imputation lambda = 0.995",
+             "fair_reg_985": "Fairness aware imputation lambda = 0.985"}
 
 font = {'family': 'normal',
         'weight': 'bold',
@@ -103,6 +103,8 @@ def load_compas_alt():
     new_df["crime_factor"] = new_df["crime_factor"].apply(
         lambda x: 0 if x == "F" else 1)
     
+    #Discretising priors count
+    new_df["priors_count"] = new_df["priors_count"].apply(lambda x: 1 if x>0 else 0)
     #Flipping the variable so that 1 is the good outcome
     new_df["two_year_recid"] = new_df["two_year_recid"].apply(
         lambda x: 0 if x == 1 else 1)
@@ -543,8 +545,8 @@ def impute(dataframe, missing_col,sensitive_col, impute="cca"):
         return data.drop(missing_col, axis=1)
     elif impute == "knn":
         pass
-    elif impute=="fair_reg_95":
-        flr = FairLogisticRegression(fairness_metric = "eo_sum",lam = 0.95)
+    elif impute=="fair_reg_985":
+        flr = FairLogisticRegression(fairness_metric = "eo_sum",lam = 0.985)
         obs_data = data.dropna()
         x = obs_data.drop(missing_col, axis = 1)
         y = obs_data[missing_col]
@@ -555,8 +557,8 @@ def impute(dataframe, missing_col,sensitive_col, impute="cca"):
         y_hat = flr.predict(x_miss)
         data.loc[data[missing_col].isnull(),missing_col] = y_hat 
         
-    elif impute =="fair_reg_99":
-        flr = FairLogisticRegression(fairness_metric = "eo_sum",lam = 0.99)
+    elif impute =="fair_reg_995":
+        flr = FairLogisticRegression(fairness_metric = "eo_sum",lam = 0.995)
         obs_data = data.dropna()
         x = obs_data.drop(missing_col, axis = 1)
         y = obs_data[missing_col]
@@ -605,6 +607,7 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
         percentiles = [i for i in range(
             1, 16)]+[j for j in range(20, 100, 10)]
     for i in tqdm(range(n_runs)):
+        np.random.seed(i)
         loaded_data = load_data(data)
         train = loaded_data["train"]
         test = loaded_data["test"]
