@@ -607,7 +607,7 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
         percentiles = [i for i in range(
             1, 16)]+[j for j in range(20, 100, 10)]
     for i in tqdm(range(n_runs)):
-        np.random.seed(i)
+        np.random.seed(i*13)
         loaded_data = load_data(data)
         train = loaded_data["train"]
         test = loaded_data["test"]

@@ -24,7 +24,7 @@ class FairLogisticRegression():
         self.weights = np.zeros(x.shape[1], dtype='float')
         self.bias = 0
 
-        for i in tqdm(range(epochs)):
+        for i in range(epochs):
             x_dot_weights = np.matmul(self.weights, x.transpose()) + self.bias
             pred = self._sigmoid(x_dot_weights)
             loss = self.compute_loss(y, pred)
@@ -34,7 +34,7 @@ class FairLogisticRegression():
             #Scaling the fairness error
             #fair_error_w = fair_error_w*(np.linalg.norm(error_w)/np.linalg.norm(fair_error_w))
             error_w = (1-self.lam)*error_w + self.lam*fair_error_w
-            if np.linalg.norm(error_w) < 0.01:
+            if np.linalg.norm(error_w) < 0.001:
                 print("BREAK AT EPOCH ", i)
                 break
             
