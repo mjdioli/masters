@@ -622,100 +622,103 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
         #results["mcar"]["delta"] = {metr: {m: {i: [] for i in IMPUTATION_COMBOS} for m in models} for metr in metrics}
         #print("results", results)
         for p in percentiles:   
-            data_mcar_missing = data_remover_cat(
-                train, missing, p, missing="mcar")
-            data_mar_missing = data_remover_cat(
-                train, missing, p, missing="mar")
-            for imp in IMPUTATIONS:  # , "reg"]:
-                data_mcar = impute(data_mcar_missing, missing,sensitive_col=sensitive, impute=imp)
-                data_mar = impute(data_mar_missing, missing,sensitive_col=sensitive, impute=imp)
-                for m in models:
-                    if imp == "coldel" and missing == sensitive:
-                        continue
+            try:
+                data_mcar_missing = data_remover_cat(
+                    train, missing, p, missing="mcar")
+                data_mar_missing = data_remover_cat(
+                    train, missing, p, missing="mar")
+                for imp in IMPUTATIONS:  # , "reg"]:
+                    data_mcar = impute(data_mcar_missing, missing,sensitive_col=sensitive, impute=imp)
+                    data_mar = impute(data_mar_missing, missing,sensitive_col=sensitive, impute=imp)
+                    for m in models:
+                        if imp == "coldel" and missing == sensitive:
+                            continue
 
-                    #MCAR
-                    # TPR, FPR, TNR, FNR data
-                    predictions_0 = MODELS[m].fit(data_mcar.drop(pred, axis=1), data_mcar[pred]).predict(
-                        class_0_test.drop([pred, missing], axis=1) if imp == "coldel" else class_0_test.drop(pred, axis=1))
-                    predictions_1 = MODELS[m].fit(data_mcar.drop(pred, axis=1), data_mcar[pred]).predict(
-                        class_1_test.drop([pred, missing], axis=1) if imp == "coldel" else class_0_test.drop(pred, axis=1))
-                    
-                    
-                    cf_0 = confusion_matrix(class_0_test[pred], predictions_0)
-                    cf_1 = confusion_matrix(class_1_test[pred], predictions_1)
-                    results["mcar"]["tpr0"][m][imp].append(cf_0["Predicted true"][0])
-                    results["mcar"]["tpr1"][m][imp].append(cf_1["Predicted true"][0])
-                    results["mcar"]["tnr0"][m][imp].append(cf_0["Predicted false"][0])
-                    results["mcar"]["tnr1"][m][imp].append(cf_1["Predicted false"][0])
-                    
-                    results[m+"_mcar_"+imp+"_" +
-                            str(p)+"_0"] = cf_0
-                    results[m+"_mcar_"+imp+"_" +
-                            str(p)+"_1"] = cf_1
-
-                    # Fairness metrics
-                    y_hat = MODELS[m].fit(data_mcar.drop(pred, axis=1), data_mcar[pred]).predict(
-                        test.drop([pred, missing], axis=1) if imp == "coldel" else test.drop(pred, axis=1))
-                    results["mcar"]["spd"][m][imp].append(
-                        spd(y_hat, test[sensitive]))
-                    
-                    results["mcar"]["pp"][m][imp].append(
-                        predictive_parity(y_hat, test[sensitive], test[pred]))
-                    results["mcar"]["acc"][m][imp].append(
-                        accuracy(test[pred], y_hat))
-                    eo = equalised_odds(y_hat, test[sensitive], test[pred])
-                    results["mcar"]["eo0"][m][imp].append(eo["Y=0"])
-                    results["mcar"]["eo1"][m][imp].append(eo["Y=1"])
-                    results["mcar"]["eosum"][m][imp].append(eo["Y=1"]+eo["Y=0"])
-                    # TPR, FPR, TNR, FNR data
-
-                    #MAR
-                    try:
-                        predictions_0 = MODELS[m].fit(data_mar.drop(pred, axis=1), data_mar[pred]).predict(
+                        #MCAR
+                        # TPR, FPR, TNR, FNR data
+                        predictions_0 = MODELS[m].fit(data_mcar.drop(pred, axis=1), data_mcar[pred]).predict(
                             class_0_test.drop([pred, missing], axis=1) if imp == "coldel" else class_0_test.drop(pred, axis=1))
-                    except Exception as e:
-                        print("Exception: ", e)
-                        print("params: ", str(p)+imp)
-                        print("head: ", data_mar.head())
-                        print("sum: ", data_mar.sum()-len(data_mar))
-                    predictions_1 = MODELS[m].fit(data_mar.drop(pred, axis=1), data_mar[pred]).predict(
-                        class_1_test.drop([pred, missing], axis=1) if imp == "coldel" else class_1_test.drop(pred, axis=1))
-                    cf_0 = confusion_matrix(class_0_test[pred], predictions_0)
-                    cf_1 = confusion_matrix(class_1_test[pred], predictions_1)
-                    results["mar"]["tpr0"][m][imp].append(cf_0["Predicted true"][0])
-                    results["mar"]["tpr1"][m][imp].append(cf_1["Predicted true"][0])
-                    results["mar"]["tnr0"][m][imp].append(cf_0["Predicted false"][0])
-                    results["mar"]["tnr1"][m][imp].append(cf_1["Predicted false"][0])
-                    
-                    results[m+"_mar_"+imp+"_" +
-                            str(p)+"_0"] = cf_0
-                    results[m+"_mar_"+imp+"_" +
-                            str(p)+"_1"] = cf_1
+                        predictions_1 = MODELS[m].fit(data_mcar.drop(pred, axis=1), data_mcar[pred]).predict(
+                            class_1_test.drop([pred, missing], axis=1) if imp == "coldel" else class_0_test.drop(pred, axis=1))
+                        
+                        
+                        cf_0 = confusion_matrix(class_0_test[pred], predictions_0)
+                        cf_1 = confusion_matrix(class_1_test[pred], predictions_1)
+                        results["mcar"]["tpr0"][m][imp].append(cf_0["Predicted true"][0])
+                        results["mcar"]["tpr1"][m][imp].append(cf_1["Predicted true"][0])
+                        results["mcar"]["tnr0"][m][imp].append(cf_0["Predicted false"][0])
+                        results["mcar"]["tnr1"][m][imp].append(cf_1["Predicted false"][0])
+                        
+                        results[m+"_mcar_"+imp+"_" +
+                                str(p)+"_0"] = cf_0
+                        results[m+"_mcar_"+imp+"_" +
+                                str(p)+"_1"] = cf_1
 
-                    # Fariness metrics
-                    y_hat = MODELS[m].fit(data_mar.drop(pred, axis=1), data_mar[pred]).predict(
-                        test.drop([pred, missing], axis=1) if imp == "coldel" else test.drop(pred, axis=1))
-                    results["mar"]["spd"][m][imp].append(
-                        spd(y_hat, test[sensitive]))
-                    results["mar"]["pp"][m][imp].append(
-                        predictive_parity(y_hat, test[sensitive], test[pred]))
-                    results["mar"]["acc"][m][imp].append(
-                        accuracy(test[pred], y_hat))
+                        # Fairness metrics
+                        y_hat = MODELS[m].fit(data_mcar.drop(pred, axis=1), data_mcar[pred]).predict(
+                            test.drop([pred, missing], axis=1) if imp == "coldel" else test.drop(pred, axis=1))
+                        results["mcar"]["spd"][m][imp].append(
+                            spd(y_hat, test[sensitive]))
+                        
+                        results["mcar"]["pp"][m][imp].append(
+                            predictive_parity(y_hat, test[sensitive], test[pred]))
+                        results["mcar"]["acc"][m][imp].append(
+                            accuracy(test[pred], y_hat))
+                        eo = equalised_odds(y_hat, test[sensitive], test[pred])
+                        results["mcar"]["eo0"][m][imp].append(eo["Y=0"])
+                        results["mcar"]["eo1"][m][imp].append(eo["Y=1"])
+                        results["mcar"]["eosum"][m][imp].append(eo["Y=1"]+eo["Y=0"])
+                        # TPR, FPR, TNR, FNR data
 
-                    eo = equalised_odds(y_hat, test[sensitive], test[pred])
-                    results["mar"]["eo0"][m][imp].append(eo["Y=0"])
-                    results["mar"]["eo1"][m][imp].append(eo["Y=1"])
-                    results["mar"]["eosum"][m][imp].append(eo["Y=1"]+eo["Y=0"])
-                    #TODO add to thesis that missingness was not applied to the test data
-                    #print(imp)
+                        #MAR
+                        try:
+                            predictions_0 = MODELS[m].fit(data_mar.drop(pred, axis=1), data_mar[pred]).predict(
+                                class_0_test.drop([pred, missing], axis=1) if imp == "coldel" else class_0_test.drop(pred, axis=1))
+                        except Exception as e:
+                            print("Exception: ", e)
+                            print("params: ", str(p)+imp)
+                            print("head: ", data_mar.head())
+                            print("sum: ", data_mar.sum()-len(data_mar))
+                        predictions_1 = MODELS[m].fit(data_mar.drop(pred, axis=1), data_mar[pred]).predict(
+                            class_1_test.drop([pred, missing], axis=1) if imp == "coldel" else class_1_test.drop(pred, axis=1))
+                        cf_0 = confusion_matrix(class_0_test[pred], predictions_0)
+                        cf_1 = confusion_matrix(class_1_test[pred], predictions_1)
+                        results["mar"]["tpr0"][m][imp].append(cf_0["Predicted true"][0])
+                        results["mar"]["tpr1"][m][imp].append(cf_1["Predicted true"][0])
+                        results["mar"]["tnr0"][m][imp].append(cf_0["Predicted false"][0])
+                        results["mar"]["tnr1"][m][imp].append(cf_1["Predicted false"][0])
+                        
+                        results[m+"_mar_"+imp+"_" +
+                                str(p)+"_0"] = cf_0
+                        results[m+"_mar_"+imp+"_" +
+                                str(p)+"_1"] = cf_1
 
-                    #Only seems to be an issue with synthetic data as performance is consistently high
-                    """if prev_spd == np.sum(y_hat):
-                        print("UNCHANGED SPD!", prev_spd, len(data_mar), imp)
-                    else:
-                        prev_spd = np.sum(y_hat)
-                    if len(results["mar"]["spd"][m][imp]) ==0:
-                        print("SPD LEN = 0! Y_HAT = ", y_hat)"""
+                        # Fariness metrics
+                        y_hat = MODELS[m].fit(data_mar.drop(pred, axis=1), data_mar[pred]).predict(
+                            test.drop([pred, missing], axis=1) if imp == "coldel" else test.drop(pred, axis=1))
+                        results["mar"]["spd"][m][imp].append(
+                            spd(y_hat, test[sensitive]))
+                        results["mar"]["pp"][m][imp].append(
+                            predictive_parity(y_hat, test[sensitive], test[pred]))
+                        results["mar"]["acc"][m][imp].append(
+                            accuracy(test[pred], y_hat))
+
+                        eo = equalised_odds(y_hat, test[sensitive], test[pred])
+                        results["mar"]["eo0"][m][imp].append(eo["Y=0"])
+                        results["mar"]["eo1"][m][imp].append(eo["Y=1"])
+                        results["mar"]["eosum"][m][imp].append(eo["Y=1"]+eo["Y=0"])
+                        #TODO add to thesis that missingness was not applied to the test data
+                        #print(imp)
+
+                        #Only seems to be an issue with synthetic data as performance is consistently high
+                        """if prev_spd == np.sum(y_hat):
+                            print("UNCHANGED SPD!", prev_spd, len(data_mar), imp)
+                        else:
+                            prev_spd = np.sum(y_hat)
+                        if len(results["mar"]["spd"][m][imp]) ==0:
+                            print("SPD LEN = 0! Y_HAT = ", y_hat)"""
+            except Exception as e:
+                print("EXCEPTION: ", e)
         #full_results[str(i)] = results.copy()
         #full_results[str(i)] = copy.deepcopy(results)
         

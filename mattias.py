@@ -7,7 +7,7 @@ synth_regular = utils.load_synthetic()
 compas = utils.load_compas_alt()
 
 
-percentiles = [0,5,10]+[p for p in range(20,60, 10)] + [70,90]
+percentiles = [0,5,10]+[p for p in range(20,40, 10)] + [60,80]
 #percentiles = [p for p in range(60,80, 10)]
 all_results = {"Full data": {}, "Averaged results": {} }
 RUNS = 10
