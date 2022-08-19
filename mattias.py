@@ -52,7 +52,7 @@ with open(Path("raw_data/simple_intermediate.json"), 'w') as f:
     
 #Compas
 RESPONSE = "two_year_recid"
-for miss in ["priors_count", "crime_factor", "is_Caucasian", "gender_factor"]:
+for miss in ["priors_count",'age_factor_Greater than 45', "crime_factor", "is_Caucasian", "gender_factor"]:
     for sensitive in ["is_Caucasian", "gender_factor"]:
         try:
             recid_results = utils.test_bench(data = "compas", pred = RESPONSE, missing = miss, sensitive=sensitive,

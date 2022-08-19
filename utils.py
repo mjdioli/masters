@@ -35,7 +35,8 @@ MODELS = {"log_reg": LogisticRegression(random_state=0, max_iter=500),
           "rf_cat": RandomForestClassifier(max_depth=4, random_state=0),
           "rf_cont": RandomForestRegressor(max_depth=4, random_state=0)}
 
-IMPUTATIONS = ["fair_reg_995", "cca", "fair_reg_985", "mean", "mice_def", "coldel"]# , "reg"]
+#IMPUTATIONS = ["fair_reg_995", "cca", "fair_reg_985", "mean", "mice_def", "coldel"]# , "reg"]
+IMPUTATIONS = ["fair_reg_985", "cca", "mean", "mice_def", "coldel"]# , "reg"]
 #IMPUTATIONS = ["cca", "mean"]#, "mice_def", "coldel"]# , "reg"]
 IMPUTATION_COMBOS = [perm[0]+"|"+perm[1] for perm in permutations(IMPUTATIONS, 2)]
 
@@ -291,15 +292,14 @@ def load_synthetic(ver="recid_alt"):
         synth_cat_train = synth_cat.iloc[round(0.333*size):, :]
     elif ver == "recid_alt":
         size = 6000
-        priors_count = np.round(
-            np.abs(np.random.uniform(3.246, 4.743, size=size)))
-        #two_year_recid = np.random.binomial(1, (1-0.455), size=size)
+        priors_count = np.random.binomial(1,0.6657, size = size )
+        two_year_recid = np.random.binomial(1, (1-0.455), size=size)
         is_Caucasian = np.random.binomial(1, 0.34, size=size)
         crime_factor = np.random.binomial(1, 0.3567, size=size)
         age_greater_than_45 = np.random.binomial(1, 0.209, size=size)
         age_less_than_25 = np.random.binomial(1, 0.218, size=size)
         sex_male = np.random.binomial(1, 0.809, size=size)
-        two_year_recid = np.around(sigmoid((priors_count*(0.2)+is_Caucasian+crime_factor +
+        two_year_recid = np.around(sigmoid((priors_count+is_Caucasian+crime_factor +
                                 age_greater_than_45+age_less_than_25+sex_male), alpha=2.6)).astype(int)
         synth_cat = pd.DataFrame({"priors_count": priors_count, "two_year_recid": two_year_recid,
                                   "is_Caucasian": is_Caucasian, "crime_factor": crime_factor,
@@ -312,8 +312,10 @@ def load_synthetic(ver="recid_alt"):
         x_1 = np.random.binomial(1, 0.45, size=size)
         x_2 = np.random.binomial(1, 0.65, size=size)
         x_3 = np.random.normal(0,1,size)
+        x_4 = np.random.binomial(1, 0.3, size=size)
+        x_5 = [np.random.binomial(1, 0.5+0.2*val, size=1)[0] for val in x_1]
         y = np.around(sigmoid(x_1*0.3+x_2+x_3, alpha=0.8)).astype(int)
-        synth_cat = pd.DataFrame({"y": y, "x_1": x_1, "x_2": x_2, "x_3": x_3})
+        synth_cat = pd.DataFrame({"y": y, "x_1": x_1, "x_2": x_2, "x_3": x_3, "x_4":x_4, "x_5":x_5})
         synth_cat_test = synth_cat.iloc[:round(0.333*size), :]
         synth_cat_train = synth_cat.iloc[round(0.333*size):, :]
     else:
@@ -449,11 +451,34 @@ def accuracy(true, pred):
         return 0
 
 
-def data_remover_cat(full_data, missing_col, missing_pct, missing="mar"):
+def data_remover_cat(full_data, missing_col, missing_pct, missing="mar", method = "sigmoid"):
     # Missing_pct is in the range 0 to 100
     data = full_data.copy()
-
+    if missing_pct == 0:
+        return data
     if missing == "mar":
+        """if method == "sigmoid":
+        else:
+            x = data.drop(missing_col, axis=1)
+            if data[missing_col].nunique() == 2:
+                clf = LogisticRegression(random_state=0).fit(x, data[missing_col])
+                preds = clf.predict_proba(x)[:, 1]
+            else:
+                clf = LinearRegression().fit(x, data[missing_col])
+                preds = clf.predict(x)
+            # print(preds)
+            lower_percentile = np.percentile(preds, missing_pct//2)
+            upper_percentile = np.percentile(preds, 100-missing_pct//2)
+            data["preds"] = preds
+            if (len(data[data["preds"] <= lower_percentile]) + len(data[(data["preds"] >= upper_percentile)]))/len(data) > (missing_pct/100)+0.05:
+                mask = np.random.choice(data[(data["preds"] <= lower_percentile) | (data["preds"] >= upper_percentile)].index, size = round(len(data)*(missing_pct/100)), replace=False)
+                data[missing_col] = data[missing_col].mask(data.index.isin(mask),
+                                                            other=np.nan)
+            else:
+                data[missing_col] = data[missing_col].mask((data["preds"] <= lower_percentile) | (data["preds"] > upper_percentile),
+                                                        other=np.nan)
+            data.drop("preds", axis=1, inplace=True)"""
+            
         x = data.drop(missing_col, axis=1)
         if data[missing_col].nunique() == 2:
             clf = LogisticRegression(random_state=0).fit(x, data[missing_col])
@@ -464,14 +489,14 @@ def data_remover_cat(full_data, missing_col, missing_pct, missing="mar"):
         # print(preds)
         lower_percentile = np.percentile(preds, missing_pct//2)
         upper_percentile = np.percentile(preds, 100-missing_pct//2)
-        """print("lower", lower_percentile,
-            "upper", upper_percentile,
-            "filtered", preds[(preds>=lower_percentile)&(preds<=upper_percentile)])
-        
-        #print("Mask", sum((data["preds"]<= lower_percentile)| (data["preds"]>= upper_percentile)))"""
         data["preds"] = preds
-        data[missing_col] = data[missing_col].mask((data["preds"] <= lower_percentile) | (data["preds"] >= upper_percentile),
-                                                   other=np.nan)
+        if (len(data[data["preds"] <= lower_percentile]) + len(data[(data["preds"] >= upper_percentile)]))/len(data) > (missing_pct/100)+0.05:
+            mask = np.random.choice(data[(data["preds"] <= lower_percentile) | (data["preds"] >= upper_percentile)].index, size = round(len(data)*(missing_pct/100)), replace=False)
+            data[missing_col] = data[missing_col].mask(data.index.isin(mask),
+                                                        other=np.nan)
+        else:
+            data[missing_col] = data[missing_col].mask((data["preds"] <= lower_percentile) | (data["preds"] > upper_percentile),
+                                                    other=np.nan)
         data.drop("preds", axis=1, inplace=True)
 
     else:
@@ -551,7 +576,7 @@ def impute(dataframe, missing_col,sensitive_col, impute="cca"):
         x = obs_data.drop(missing_col, axis = 1)
         y = obs_data[missing_col]
         z = obs_data[sensitive_col]
-        flr.fit(x,y,z, epochs=50)
+        flr.fit(x,y,z, epochs=100)
         
         x_miss = data[data[missing_col].isnull()].drop(missing_col,axis = 1)
         y_hat = flr.predict(x_miss)
@@ -563,7 +588,7 @@ def impute(dataframe, missing_col,sensitive_col, impute="cca"):
         x = obs_data.drop(missing_col, axis = 1)
         y = obs_data[missing_col]
         z = obs_data[sensitive_col]
-        flr.fit(x,y,z, epochs=50)
+        flr.fit(x,y,z, epochs=100)
         
         x_miss = data[data[missing_col].isnull()].drop(missing_col,axis = 1)
         y_hat = flr.predict(x_miss)
@@ -607,7 +632,7 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
         percentiles = [i for i in range(
             1, 16)]+[j for j in range(20, 100, 10)]
     for i in tqdm(range(n_runs)):
-        np.random.seed(i*13)
+        np.random.seed(i)
         loaded_data = load_data(data)
         train = loaded_data["train"]
         test = loaded_data["test"]
@@ -646,8 +671,8 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
                         cf_1 = confusion_matrix(class_1_test[pred], predictions_1)
                         results["mcar"]["tpr0"][m][imp].append(cf_0["Predicted true"][0])
                         results["mcar"]["tpr1"][m][imp].append(cf_1["Predicted true"][0])
-                        results["mcar"]["tnr0"][m][imp].append(cf_0["Predicted false"][0])
-                        results["mcar"]["tnr1"][m][imp].append(cf_1["Predicted false"][0])
+                        results["mcar"]["tnr0"][m][imp].append(cf_0["Predicted false"][1])
+                        results["mcar"]["tnr1"][m][imp].append(cf_1["Predicted false"][1])
                         
                         results[m+"_mcar_"+imp+"_" +
                                 str(p)+"_0"] = cf_0
@@ -685,8 +710,8 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
                         cf_1 = confusion_matrix(class_1_test[pred], predictions_1)
                         results["mar"]["tpr0"][m][imp].append(cf_0["Predicted true"][0])
                         results["mar"]["tpr1"][m][imp].append(cf_1["Predicted true"][0])
-                        results["mar"]["tnr0"][m][imp].append(cf_0["Predicted false"][0])
-                        results["mar"]["tnr1"][m][imp].append(cf_1["Predicted false"][0])
+                        results["mar"]["tnr0"][m][imp].append(cf_0["Predicted false"][1])
+                        results["mar"]["tnr1"][m][imp].append(cf_1["Predicted false"][1])
                         
                         results[m+"_mar_"+imp+"_" +
                                 str(p)+"_0"] = cf_0
@@ -710,13 +735,6 @@ def test_bench(pred: str, missing: str, sensitive: str, data="compas", pred_var_
                         #TODO add to thesis that missingness was not applied to the test data
                         #print(imp)
 
-                        #Only seems to be an issue with synthetic data as performance is consistently high
-                        """if prev_spd == np.sum(y_hat):
-                            print("UNCHANGED SPD!", prev_spd, len(data_mar), imp)
-                        else:
-                            prev_spd = np.sum(y_hat)
-                        if len(results["mar"]["spd"][m][imp]) ==0:
-                            print("SPD LEN = 0! Y_HAT = ", y_hat)"""
             except Exception as e:
                 print("EXCEPTION: ", e)
         #full_results[str(i)] = results.copy()

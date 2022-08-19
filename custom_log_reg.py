@@ -1,5 +1,5 @@
 import copy
-import numpy as np
+import autograd.numpy as np
 from tqdm import tqdm
 from sklearn.metrics import accuracy_score
 
@@ -8,7 +8,7 @@ class CustomLogisticRegression():
         self.losses = []
         self.train_accuracies = []
 
-    def fit(self, x, y, epochs):
+    def fit(self, x, y, epochs = 20):
         x = self._transform_x(x)
         y = self._transform_y(y)
 
