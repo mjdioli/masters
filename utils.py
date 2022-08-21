@@ -203,13 +203,14 @@ def load_adult(smaller=False, scaler=True):
             "occupation", "relationship", "race", "gender", "capital-gain", "capital-loss",
             "hours-per-week", "native-country", "income"]
             )
-    len_train = len(data.values[:, -1])
     data_test = pd.read_csv(
         pwd+'adult.test',
         names=["age", "workclass", "fnlwgt", "education", "education-num", "marital-status",
             "occupation", "relationship", "race", "gender", "capital-gain", "capital-loss",
             "hours-per-week", "native-country", "income"]
     )
+    data = pd.concat([data,data_test], axis = 0)
+    
     ordering = ["age", "fnlwgt", "education", "education-num",
             "occupation", "relationship",  "capital-gain", "capital-loss",
             "hours-per-week", "native-country","race", "gender","marital-status","workclass", "income"]
@@ -227,6 +228,8 @@ def load_adult(smaller=False, scaler=True):
 
     data["marital-status"] = data["marital-status"].apply(lambda x: 1 if "arried" in x else 0)
     # categorical fields
+    #print("RELATIONSHIP", data["relationship"].value_counts(normalize=True))
+    #print(data.head(15))
     category_col = ['education',  'occupation',
                     'relationship', 'gender', 'native-country', 'income']
 
@@ -236,7 +239,7 @@ def load_adult(smaller=False, scaler=True):
 
     
     
-    data, data_test = data.drop(columns=['fnlwgt']), data_test.drop(columns=['fnlwgt'])
+    data = data.drop(columns=['fnlwgt'])
     
     datamat = data.values
     datamat = datamat[:, :-5]

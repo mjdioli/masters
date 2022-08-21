@@ -33,18 +33,18 @@ MODELS = {"log_reg": LogisticRegression(random_state=0, max_iter=500),
           "rf_cat": RandomForestClassifier(max_depth=4, random_state=0)}
 
 #IMPUTATIONS = ["fair_reg_995", "cca", "fair_reg_985", "mean", "mice_def", "coldel"]# , "reg"]
-IMPUTATIONS = ["fair_reg_95", "fair_reg_99", "fair_reg_75", "fair_reg_50", "cca", "mean", "mice_def", "coldel"]# , "reg"]
+IMPUTATIONS = ["fair_reg_95", "fair_reg_50", "log_reg", "cca", "mean", "mice_def", "coldel"]# , "reg"]
 #IMPUTATIONS = ["cca", "mean"]#, "mice_def", "coldel"]# , "reg"]
 METRICS = ["spd", "eosum", "acc", "tpr0", "tpr1", "tnr0", "tnr1"]
 IMPUTATION_COMBOS = [perm[0]+"|"+perm[1] for perm in permutations(IMPUTATIONS, 2)]
 
 #missing_pct = [0, 25,50,75, 90, 95]
-RECID_ALPHA = [1000, 3.693, 2.84,1.94, 1.033,0.91]
-SIMPLE_ALPHA = [1000, 2.96, 1.94,0.979, 0.1,-0.41]
+#RECID_ALPHA = [1000, 3.693, 2.84,1.94, 1.033,0.91]
+#SIMPLE_ALPHA = [1000, 2.96, 1.94,0.979, 0.1,-0.41]
 
 #missing_pct = [0, 10,25,50,75, 90]
-RECID_ALPHA2 = [1000, 4.0, 3.693, 2.84,1.94,]
-SIMPLE_ALPHA2 = [1000, 3.86, 2.96, 1.94,0.979, 0.1]
+RECID_ALPHA = [1000, 4.0, 3.693, 2.84,1.94, 1.033]
+SIMPLE_ALPHA = [1000, 3.86, 2.96, 1.94,0.979, 0.1]
 
 
 SAVEPATH = "experiments_final/"
@@ -91,7 +91,10 @@ def sigmoid(x, alpha):
 
 def data_remover_cat(full_data, missing_col, alpha, noise, missing_pct = None, missingness="mar", robust = True):
     # Missing_pct is in the range 0 to 100
+    
     data = full_data.copy()
+    if alpha >100:
+        return data
     if missingness == "mar":
         #print(data.drop(missing_col, axis = 1).sum(axis = 1), len(noise))
         ps = sigmoid(data.drop(missing_col, axis = 1).sum(axis = 1) + noise, alpha)
@@ -100,6 +103,7 @@ def data_remover_cat(full_data, missing_col, alpha, noise, missing_pct = None, m
             data["miss"] = np.random.binomial(1,ps, size = len(ps))
         else:
             data["miss"] = np.around(ps)
+        #print("PERCENT MISSING", data["miss"].sum())
         data[missing_col] = data[missing_col].mask((data["miss"]==1),
                                                     other=np.nan)
         data.drop("miss", axis=1, inplace=True)
@@ -113,9 +117,11 @@ def data_remover_cat(full_data, missing_col, alpha, noise, missing_pct = None, m
     return data
 
 @ignore_warnings(category=ConvergenceWarning)
-def impute(dataframe,response, missing_col,sensitive_col, impute="cca"):
+def impute(dataframe,response, missing_col,sensitive_col, alpha, impute="cca"):
     #TODO add knn imputation
     data = dataframe.copy()
+    if alpha >100 and impute != "coldel":
+        return data
     impute_split = impute.split("_")
     #print(impute_split)
     if impute == "cca":
@@ -139,15 +145,28 @@ def impute(dataframe,response, missing_col,sensitive_col, impute="cca"):
         return data.drop(missing_col, axis=1)
     elif impute == "knn":
         pass
+    elif impute == "log_reg":
+        obs_data = data.dropna()
+        x = obs_data.drop(missing_col, axis = 1)
+        y = obs_data[missing_col]
+        model = LogisticRegression(random_state=0, max_iter=500)
+        model.fit(x, y)
+        #TODO fix when missing == 0
+        x_miss = data[data[missing_col].isnull()].drop(missing_col,axis = 1)
+        y_hat = model.predict(x_miss)
+        data.loc[data[missing_col].isnull(),missing_col] = y_hat 
+        
     elif len(impute_split) ==3 :
         flr = FairLogisticRegression(fairness_metric = "eo_sum",lam = int(impute_split[-1])/100)
         obs_data = data.dropna()
         
-        flr.pre_fit(obs_data.drop(missing_col, axis = 1), obs_data[missing_col])
+        flr.pre_fit(obs_data.drop(missing_col, axis = 1), obs_data[missing_col], epochs = 300)
+        flr.fit_predicitve(obs_data.drop(response, axis = 1), obs_data[response], epochs=100)
         x = obs_data.drop(missing_col, axis = 1)
         y = obs_data[missing_col]
+        y_predictive = obs_data[response]
         z = obs_data[sensitive_col]
-        flr.fit(x, y, z, epochs = 50, 
+        flr.fit(x, y, y_predictive, z, epochs = 100, 
                         data = obs_data.drop([response, missing_col], axis = 1), missing = missing_col)
         
         x_miss = data[data[missing_col].isnull()].drop(missing_col,axis = 1)
@@ -158,7 +177,7 @@ def impute(dataframe,response, missing_col,sensitive_col, impute="cca"):
         
     return data
 
-def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"], dataset = "recid", n_runs = 10, skip_mcar = False):
+def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"], dataset = "recid", n_runs = 10, robust = True, with_mcar = True, ):
     full_results = {"delta": {"mar":{metr:{m:{i:[] for i in IMPUTATION_COMBOS} for m in models} for metr in METRICS},
                               "mcar": {metr:{m:{i:[] for i in IMPUTATION_COMBOS} for m in models} for metr in METRICS}}}
     for run in tqdm(range(n_runs)):
@@ -167,7 +186,7 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
         np.random.seed(run*13)
         if dataset =="simple":
             data = utils.load_synthetic("simple")
-            alphas = SIMPLE_ALPHA
+            alpha = SIMPLE_ALPHA
         elif dataset =="adult":
             data = utils.load_adult()
             raise NotImplementedError("FOR THE FUTURE")
@@ -186,19 +205,22 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
         noise = np.random.normal(0,0.1,size = len(train))
         
         for alph, missing_pct in zip(alpha, [0, 5,10,25,50,75]):
-            #try:
-            """if missing_pct ==0:
-                data_mcar_missing = train.copy()
-                data_mar_missing = train.copy()
-            else:"""
-            data_mcar_missing = data_remover_cat(
-                    train, missing_col, alph, noise, missing_pct = missing_pct, missingness="mcar")
+            #print(missing_pct)
+            if with_mcar:
+                data_mcar_missing = data_remover_cat(
+                        train, missing_col, alph, noise, missing_pct = missing_pct, missingness="mcar", robust = robust)
             data_mar_missing = data_remover_cat(
-                    train, missing_col, alph, noise, missingness="mar")
+                    train, missing_col, alph, noise, missingness="mar", robust = robust)
+            #print(data_mcar_missing.columns)
             for imp in IMPUTATIONS:  # , "reg"]:
+                if imp =="fair_reg_95" or imp =="cca":
+                    print(imp)
                 #if missing_pct !=0:
-                data_mcar = impute(data_mcar_missing, response, missing_col,sensitive_col=sensitive, impute=imp)
-                data_mar = impute(data_mar_missing, response,  missing_col,sensitive_col=sensitive, impute=imp)
+
+                if with_mcar:
+                    data_mcar = impute(data_mcar_missing, response, missing_col,sensitive_col=sensitive,alpha = alph, impute=imp)
+                    #print(data_mcar.columns)
+                data_mar = impute(data_mar_missing, response,  missing_col,sensitive_col=sensitive, alpha = alph, impute=imp)
                 """else:
                     data_mcar = data_mcar_missing
                     data_mar = data_mar_missing"""
@@ -208,34 +230,35 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
                     #print("MODEL",m,"\n", "IMP", imp)
                     #MCAR
                     # TPR, FPR, TNR, FNR data
-                    predictions_0 = MODELS[m].fit(data_mcar.drop(response, axis=1), data_mcar[response]).predict(
-                        class_0_test.drop([response, missing_col], axis=1) if imp == "coldel" else class_0_test.drop(response, axis=1))
-                    predictions_1 = MODELS[m].fit(data_mcar.drop(response, axis=1), data_mcar[response]).predict(
-                        class_1_test.drop([response, missing_col], axis=1) if imp == "coldel" else class_0_test.drop(response, axis=1))
-                    
-                    
-                    cf_0 = utils.confusion_matrix(class_0_test[response], predictions_0)
-                    cf_1 = utils.confusion_matrix(class_1_test[response], predictions_1)
-                    results["mcar"]["tpr0"][m][imp].append(cf_0["Predicted true"][0])
-                    results["mcar"]["tpr1"][m][imp].append(cf_1["Predicted true"][0])
-                    results["mcar"]["tnr0"][m][imp].append(cf_0["Predicted false"][1])
-                    results["mcar"]["tnr1"][m][imp].append(cf_1["Predicted false"][1])
-                    
-                    results[m+"_mcar_"+imp+"_" +
-                            str(missing_pct)+"_0"] = cf_0
-                    results[m+"_mcar_"+imp+"_" +
-                            str(missing_pct)+"_1"] = cf_1
+                    if with_mcar:
+                        predictions_0 = MODELS[m].fit(data_mcar.drop(response, axis=1), data_mcar[response]).predict(
+                            class_0_test.drop([response, missing_col], axis=1) if imp == "coldel" else class_0_test.drop(response, axis=1))
+                        predictions_1 = MODELS[m].fit(data_mcar.drop(response, axis=1), data_mcar[response]).predict(
+                            class_1_test.drop([response, missing_col], axis=1) if imp == "coldel" else class_0_test.drop(response, axis=1))
+                        
+                        
+                        cf_0 = utils.confusion_matrix(class_0_test[response], predictions_0)
+                        cf_1 = utils.confusion_matrix(class_1_test[response], predictions_1)
+                        results["mcar"]["tpr0"][m][imp].append(cf_0["Predicted true"][0])
+                        results["mcar"]["tpr1"][m][imp].append(cf_1["Predicted true"][0])
+                        results["mcar"]["tnr0"][m][imp].append(cf_0["Predicted false"][1])
+                        results["mcar"]["tnr1"][m][imp].append(cf_1["Predicted false"][1])
+                        
+                        results[m+"_mcar_"+imp+"_" +
+                                str(missing_pct)+"_0"] = cf_0
+                        results[m+"_mcar_"+imp+"_" +
+                                str(missing_pct)+"_1"] = cf_1
 
-                    # Fairness metrics
-                    y_hat = MODELS[m].fit(data_mcar.drop(response, axis=1), data_mcar[response]).predict(
-                        test.drop([response, missing_col], axis=1) if imp == "coldel" else test.drop(response, axis=1))
-                    results["mcar"]["spd"][m][imp].append(
-                        utils.spd(y_hat, test[sensitive]))
-                    
-                    results["mcar"]["acc"][m][imp].append(
-                        utils.accuracy(test[response], y_hat))
-                    eo = utils.equalised_odds(y_hat, test[sensitive], test[response])
-                    results["mcar"]["eosum"][m][imp].append(eo["Y=1"]+eo["Y=0"])
+                        # Fairness metrics
+                        y_hat = MODELS[m].fit(data_mcar.drop(response, axis=1), data_mcar[response]).predict(
+                            test.drop([response, missing_col], axis=1) if imp == "coldel" else test.drop(response, axis=1))
+                        results["mcar"]["spd"][m][imp].append(
+                            utils.spd(y_hat, test[sensitive]))
+                        
+                        results["mcar"]["acc"][m][imp].append(
+                            utils.accuracy(test[response], y_hat))
+                        eo = utils.equalised_odds(y_hat, test[sensitive], test[response])
+                        results["mcar"]["eosum"][m][imp].append(eo["Y=1"]+eo["Y=0"])
                     # TPR, FPR, TNR, FNR data
 
                     #MAR
@@ -279,9 +302,12 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
         full_results[str(run)] = results
     temp_delta = collections.defaultdict(list)
     avg = collections.defaultdict(list)
+    std = {}
     
     #Collecting all observations across runs
     for miss in ["mcar", "mar"]:
+        if not with_mcar and miss =="mcar":
+            continue
         for key in [str(n) for n in range(n_runs)]:
             for m in models:
                 for imp in IMPUTATIONS:
@@ -292,6 +318,7 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
     #Averaging
     for key, value in avg.items():
         avg[key] = [float(n) for n in np.mean(value, axis = 0)]  
+        std[key] =  [float(n) for n in np.std(value, axis = 0)] 
           
           
     try:
@@ -303,4 +330,4 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
     except Exception as e:
         print("Couldn't save data with exception: ", e)  
     del full_results["delta"]
-    return {"Full data": full_results, "Averaged results": avg}
+    return {"Full data": full_results, "Averaged results": avg, "Standard deviation": std}

@@ -32,32 +32,31 @@ class FairLogisticRegression():
 
             
             
-    def fit(self, x, y, z, epochs, data = None, missing = None):
+    def fit(self, x, y, y_predictive, z, epochs, data = None, missing = None):
         x = self._transform_x(x)
         y = self._transform_y(y)
+        y_predictive = self._transform_y(y_predictive)
         z = self._transform_y(z)
         #print(data.values)
         data = self._transform_x(data)
-        
         #print("WEIGHTS", self.weights)
-
         for i in range(epochs):
             x_dot_weights = np.matmul(self.weights, x.transpose()) + self.bias
             pred = self._sigmoid(x_dot_weights)
             loss = self.compute_loss(y, pred)
             error_w, error_b = self.compute_gradients(x, y, pred)
             if self.model is not None:
-                fair_error_w = self.fair_grad_model(self.weights, self.weights_pred, x.transpose(),y,z,
+                fair_error_w = self.fair_grad_model(self.weights, self.weights_pred, x.transpose(),y_predictive,z,
                                                     model = self.model, data = data, missing = missing,
                                                     metric = self.fairness_metric)
                 
             else:
-                
                 fair_error_w = self.fair_grad(self.weights, x.transpose(),y,z,self.fairness_metric)
             #print("difference_error: ", error_w-fair_error_w)
             #Scaling the fairness error
             if np.linalg.norm(fair_error_w) ==0:
                 scaler = 1
+                #print("DIVIDING BY ZERO")
             else:
                 scaler = (np.linalg.norm(error_w)/np.linalg.norm(fair_error_w))
             #print("SCALER", scaler)
@@ -82,6 +81,32 @@ class FairLogisticRegression():
             self.train_accuracies.append(accuracy_score(y, pred_to_class))
             self.losses.append(loss)
 
+
+    def fairness_model(self, weights,weights_pred, x_transpose, true, prot, model, data, missing, metric="spd"):
+    
+        x_beta = np.matmul(weights, x_transpose) + self.bias
+
+        pred =  self._sigmoid(x_beta)
+        #print(pred[:5])
+        new_data = np.hstack((data, pred.reshape(-1,1)))
+        #print("new_data")
+        x_gamma= np.matmul(weights_pred, new_data.transpose()) + self.bias_pred
+        #print("x_gamma")
+        pred = self._sigmoid(x_gamma)
+        #print("PRED_GAMMA")
+        if metric == "spd":
+            return self.spd(pred, prot)
+        elif metric == "custom":
+            #print("custom")
+            return self.custom_fair(pred,prot)
+        else:
+            return self.eo_sum(pred,prot,true)
+        
+        
+    def fair_grad_model(self, weights, weights_pred, x_transpose, true, prot, model, data, missing, metric = "spd"):
+        g = grad(self.fairness_model, 0)
+        return g(weights, weights_pred, x_transpose, true, prot, model, data, missing, metric)
+    
     def compute_loss(self, y_true, y_pred):
         # binary cross entropy
         y_zero_loss = y_true * np.log(y_pred + 1e-9)
@@ -151,30 +176,7 @@ class FairLogisticRegression():
         g = grad(self.fairness, 0)
         return g(weights, x_transpose, true, prot, metric)
     
-    def fairness_model(self, weights,weights_pred, x_transpose, true, prot, model, data, missing, metric="spd"):
     
-        x_beta = np.matmul(weights, x_transpose) + self.bias
-
-        pred =  self._sigmoid(x_beta)
-        #print(pred[:5])
-        new_data = np.hstack((data, pred.reshape(-1,1)))
-        #print("new_data")
-        x_gamma= np.matmul(weights_pred, new_data.transpose()) + self.bias_pred
-        #print("x_gamma")
-        pred = self._sigmoid(x_gamma)
-        #print("PRED_GAMMA")
-        if metric == "spd":
-            return self.spd(pred, prot)
-        elif metric == "custom":
-            #print("custom")
-            return self.custom_fair(pred,prot)
-        else:
-            return self.eo_sum(pred,prot,true)
-        
-        
-    def fair_grad_model(self, weights, weights_pred, x_transpose, true, prot, model, data, missing, metric = "spd"):
-        g = grad(self.fairness_model, 0)
-        return g(weights, weights_pred, x_transpose, true, prot, model, data, missing, metric)
         
     def update_model_parameters(self, error_w, error_b, main = True):
         if main:
@@ -215,14 +217,14 @@ class FairLogisticRegression():
         probabilities = self._sigmoid(x_dot_weights)
         return np.around(probabilities)
     
-    def fit_predicitve(self, x, y, epochs = 20):
+    def fit_predicitve(self, x, y, epochs = 50):
         x = self._transform_x(x)
         y = self._transform_y(y)
 
         self.weights_pred = np.zeros(x.shape[1])
         self.bias_pred = 0
 
-        for i in tqdm(range(epochs)):
+        for i in range(epochs):
             x_dot_weights = np.matmul(self.weights_pred, x.transpose()) + self.bias_pred
             pred = self._sigmoid(x_dot_weights)
             error_w, error_b = self.compute_gradients(x, y, pred)
