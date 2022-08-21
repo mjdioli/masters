@@ -213,8 +213,8 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
                     train, missing_col, alph, noise, missingness="mar", robust = robust)
             #print(data_mcar_missing.columns)
             for imp in IMPUTATIONS:  # , "reg"]:
-                if imp =="fair_reg_95" or imp =="cca":
-                    print(imp)
+                """if imp =="fair_reg_95" or imp =="cca":
+                    print(imp)"""
                 #if missing_pct !=0:
 
                 if with_mcar:
