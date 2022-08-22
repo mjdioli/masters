@@ -177,7 +177,7 @@ def impute(dataframe,response, missing_col,sensitive_col, alpha, impute="cca"):
         
     return data
 
-def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"], dataset = "recid", n_runs = 10, robust = True, with_mcar = True, ):
+def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"], dataset = "recid", n_runs = 10, robust = True, with_mcar = True):
     full_results = {"delta": {"mar":{metr:{m:{i:[] for i in IMPUTATION_COMBOS} for m in models} for metr in METRICS},
                               "mcar": {metr:{m:{i:[] for i in IMPUTATION_COMBOS} for m in models} for metr in METRICS}}}
     for run in tqdm(range(n_runs)):
@@ -230,6 +230,7 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
                     #print("MODEL",m,"\n", "IMP", imp)
                     #MCAR
                     # TPR, FPR, TNR, FNR data
+                    #Investigate XGBoost at the fit stage and if data needs to be transformed
                     if with_mcar:
                         predictions_0 = MODELS[m].fit(data_mcar.drop(response, axis=1), data_mcar[response]).predict(
                             class_0_test.drop([response, missing_col], axis=1) if imp == "coldel" else class_0_test.drop(response, axis=1))

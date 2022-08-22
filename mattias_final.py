@@ -11,7 +11,7 @@ if not os.path.isdir(Path("final_experiment/")):
     
 import json
 
-runs = 5
+runs = 4
 
 
 
@@ -25,11 +25,16 @@ for rob in [True, False]:
             except Exception as e:
                 print("Failed on COMPAS at " + miss + " "+ sensitive + " with error: ", e)
             compas[miss+"|"+sensitive] = recid
-try:
+            try:
+                with open(Path(savepath+"compas.json"), 'w') as f:
+                    json.dump(compas, f, indent=1)
+            except:
+                print("COULDNT SAVE COMPAS")
+"""try:
     with open(Path(savepath+".json"), 'w') as f:
         json.dump(compas, f, indent=1)
 except:
-    print("COULDNT SAVE COMPAS")
+    print("COULDNT SAVE COMPAS")"""
 
 synth_compas = {}
 response_recid = "two_year_recid"
@@ -41,11 +46,13 @@ for miss in ["priors_count",'age_factor_Greater than 45', "crime_factor"]:#, "is
         except Exception as e:
             print("Failed on COMPAS at " + miss + " "+ sensitive + " with error: ", e)
         synth_compas[miss+"|"+sensitive] = synth_comp
-try:
-    with open(Path(savepath+".json"), 'w') as f:
-        json.dump(synth_compas, f, indent=1)
-except:
-    print("COULDNT SAVE SYNTH COMPAS")
+        try:
+            with open(Path(savepath+"synth_compas.json"), 'w') as f:
+                json.dump(synth_compas, f, indent=1)
+        except:
+            print("COULDNT SAVE SYNTH COMPAS")
+        
+
         
     
 synth_simple = {}
@@ -58,11 +65,11 @@ for miss in ["x_2", "x_5"]:
         print("Failed on simple synth at " + miss + " "+ sensitive + " with error: ", e)
     synth_simple[miss+"|"+sensitive] = simple
 
-try:
-    with open(Path(savepath+".json"), 'w') as f:
-        json.dump(synth_simple, f, indent=1)
-except:
-    print("COULDNT SAVE SIMPLE SYNTH")
+    try:
+        with open(Path(savepath+"simple.json"), 'w') as f:
+            json.dump(synth_simple, f, indent=1)
+    except:
+        print("COULDNT SAVE SIMPLE SYNTH")
     
     
 adult = {}
@@ -76,8 +83,8 @@ for miss in ["marital-status", "gender"]:
             print("Failed on adult at " + miss + " "+ sensitive + " with error: ", e)
         synth_simple[miss+"|"+sensitive] = adult
 
-try:
-    with open(Path(savepath+".json"), 'w') as f:
-        json.dump(adult, f, indent=1)
-except:
-    print("COULDNT SAVE ADULT")
+        try:
+            with open(Path(savepath+"adult.json"), 'w') as f:
+                json.dump(adult, f, indent=1)
+        except:
+            print("COULDNT SAVE ADULT")
