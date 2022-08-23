@@ -11,7 +11,7 @@ if not os.path.isdir(Path("final_experiment/")):
     
 import json
 
-runs = 4
+runs = 10
 
 
 
@@ -38,13 +38,13 @@ except:
 
 synth_compas = {}
 response_recid = "two_year_recid"
-
-for miss in ["priors_count",'age_factor_Greater than 45', "crime_factor"]:#, "is_Caucasian", "gender_factor"]:
+ 
+for miss in ['priors_count', 'age_factor_greater_than_45', "crime_factor"]:#, "is_Caucasian", "gender_factor"]:
     for sensitive in ["is_Caucasian", "gender_factor"]:
         try:
             synth_comp= utils_clean.run(response_recid, miss, sensitive, models = ["log_reg", "knn", "rf_cat"], dataset = "recid_synth", n_runs = runs, robust=True, with_mcar=True)
         except Exception as e:
-            print("Failed on COMPAS at " + miss + " "+ sensitive + " with error: ", e)
+            print("Failed on COMPAS SYNTH at " + miss + " "+ sensitive + " with error: ", e)
         synth_compas[miss+"|"+sensitive] = synth_comp
         try:
             with open(Path(savepath+"synth_compas.json"), 'w') as f:

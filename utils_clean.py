@@ -160,13 +160,13 @@ def impute(dataframe,response, missing_col,sensitive_col, alpha, impute="cca"):
         flr = FairLogisticRegression(fairness_metric = "eo_sum",lam = int(impute_split[-1])/100)
         obs_data = data.dropna()
         
-        flr.pre_fit(obs_data.drop(missing_col, axis = 1), obs_data[missing_col], epochs = 300)
-        flr.fit_predicitve(obs_data.drop(response, axis = 1), obs_data[response], epochs=100)
+        flr.pre_fit(obs_data.drop(missing_col, axis = 1), obs_data[missing_col], epochs = 150)
+        flr.fit_predicitve(obs_data.drop(response, axis = 1), obs_data[response], epochs=50)
         x = obs_data.drop(missing_col, axis = 1)
         y = obs_data[missing_col]
         y_predictive = obs_data[response]
         z = obs_data[sensitive_col]
-        flr.fit(x, y, y_predictive, z, epochs = 100, 
+        flr.fit(x, y, y_predictive, z, epochs = 50, 
                         data = obs_data.drop([response, missing_col], axis = 1), missing = missing_col)
         
         x_miss = data[data[missing_col].isnull()].drop(missing_col,axis = 1)
