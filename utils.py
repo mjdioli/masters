@@ -311,7 +311,7 @@ def load_synthetic(ver="recid_alt"):
         synth_cat_test = synth_cat.iloc[:round(0.333*size), :]
         synth_cat_train = synth_cat.iloc[round(0.333*size):, :]
     elif ver == "simple":
-        size = 10000
+        size = 2000
         x_1 = np.random.binomial(1, 0.45, size=size)
         x_2 = np.random.binomial(1, 0.65, size=size)
         x_3 = np.random.normal(0,1,size)

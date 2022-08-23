@@ -35,7 +35,7 @@ MODELS = {"log_reg": LogisticRegression(random_state=0, max_iter=500),
 #IMPUTATIONS = ["fair_reg_995", "cca", "fair_reg_985", "mean", "mice_def", "coldel"]# , "reg"]
 IMPUTATIONS = ["fair_reg_95", "fair_reg_50", "log_reg", "cca", "mean", "mice_def", "coldel"]# , "reg"]
 #IMPUTATIONS = ["cca", "mean"]#, "mice_def", "coldel"]# , "reg"]
-METRICS = ["spd", "eosum", "acc", "tpr0", "tpr1", "tnr0", "tnr1"]
+METRICS = ["spd", "eosum", "acc", "tpr0", "tpr1", "tnr0", "tnr1", "tprd", "tnrd"]
 IMPUTATION_COMBOS = [perm[0]+"|"+perm[1] for perm in permutations(IMPUTATIONS, 2)]
 
 #missing_pct = [0, 25,50,75, 90, 95]
@@ -45,6 +45,7 @@ IMPUTATION_COMBOS = [perm[0]+"|"+perm[1] for perm in permutations(IMPUTATIONS, 2
 #missing_pct = [0, 10,25,50,75, 90]
 RECID_ALPHA = [1000, 4.0, 3.693, 2.84,1.94, 1.033]
 SIMPLE_ALPHA = [1000, 3.86, 2.96, 1.94,0.979, 0.1]
+ADULT_ALPHA =  [1000, 7.267, 6.799, 6.23,5.5,4.92]
 
 
 SAVEPATH = "experiments_final/"
@@ -160,13 +161,13 @@ def impute(dataframe,response, missing_col,sensitive_col, alpha, impute="cca"):
         flr = FairLogisticRegression(fairness_metric = "eo_sum",lam = int(impute_split[-1])/100)
         obs_data = data.dropna()
         
-        flr.pre_fit(obs_data.drop(missing_col, axis = 1), obs_data[missing_col], epochs = 150)
-        flr.fit_predicitve(obs_data.drop(response, axis = 1), obs_data[response], epochs=50)
+        flr.pre_fit(obs_data.drop(missing_col, axis = 1), obs_data[missing_col], epochs = 300)
+        flr.fit_predicitve(obs_data.drop(response, axis = 1), obs_data[response], epochs=100)
         x = obs_data.drop(missing_col, axis = 1)
         y = obs_data[missing_col]
         y_predictive = obs_data[response]
         z = obs_data[sensitive_col]
-        flr.fit(x, y, y_predictive, z, epochs = 50, 
+        flr.fit(x, y, y_predictive, z, epochs = 100, 
                         data = obs_data.drop([response, missing_col], axis = 1), missing = missing_col)
         
         x_miss = data[data[missing_col].isnull()].drop(missing_col,axis = 1)
@@ -189,6 +190,7 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
             alpha = SIMPLE_ALPHA
         elif dataset =="adult":
             data = utils.load_adult()
+            alpha = ADULT_ALPHA
         elif dataset == "recid_synth":
             data = utils.load_synthetic()
             alpha = RECID_ALPHA
@@ -243,6 +245,8 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
                         results["mcar"]["tpr1"][m][imp].append(cf_1["Predicted true"][0])
                         results["mcar"]["tnr0"][m][imp].append(cf_0["Predicted false"][1])
                         results["mcar"]["tnr1"][m][imp].append(cf_1["Predicted false"][1])
+                        results["mcar"]["tprd"][m][imp].append(abs(cf_1["Predicted true"][0] - cf_0["Predicted true"][0]))
+                        results["mcar"]["tnrd"][m][imp].append(abs(cf_1["Predicted false"][1]-cf_0["Predicted false"][1]))
                         
                         results[m+"_mcar_"+imp+"_" +
                                 str(missing_pct)+"_0"] = cf_0
@@ -278,6 +282,8 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
                     results["mar"]["tpr1"][m][imp].append(cf_1["Predicted true"][0])
                     results["mar"]["tnr0"][m][imp].append(cf_0["Predicted false"][1])
                     results["mar"]["tnr1"][m][imp].append(cf_1["Predicted false"][1])
+                    results["mar"]["tprd"][m][imp].append(abs(cf_1["Predicted true"][0] - cf_0["Predicted true"][0]))
+                    results["mar"]["tnrd"][m][imp].append(abs(cf_1["Predicted false"][1]-cf_0["Predicted false"][1]))
                     
                     results[m+"_mar_"+imp+"_" +
                             str(missing_pct)+"_0"] = cf_0

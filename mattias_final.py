@@ -11,11 +11,11 @@ if not os.path.isdir(Path("final_experiment/")):
     
 import json
 
-runs = 4
+runs = 10
 
 
-
-"""compas = {}
+print("COMPAS START")
+compas = {}
 response_recid = "two_year_recid"
 for rob in [True, False]:
     for miss in ["priors_count",'age_factor_Greater than 45', "crime_factor"]:#, "is_Caucasian", "gender_factor"]:
@@ -24,19 +24,21 @@ for rob in [True, False]:
                 recid = utils_clean.run(response_recid, miss, sensitive, models = ["log_reg", "knn", "rf_cat"], dataset = "recid", n_runs = runs, robust=rob, with_mcar=True)
             except Exception as e:
                 print("Failed on COMPAS at " + miss + " "+ sensitive + " with error: ", e)
-            compas[miss+"|"+sensitive] = recid
+            compas["robust_"+str(rob)+miss+"|"+sensitive] = recid
             try:
                 with open(Path(savepath+"compas.json"), 'w') as f:
                     json.dump(compas, f, indent=1)
             except:
-                print("COULDNT SAVE COMPAS")"""
+                print("COULDNT SAVE COMPAS")
 """try:
     with open(Path(savepath+".json"), 'w') as f:
         json.dump(compas, f, indent=1)
 except:
     print("COULDNT SAVE COMPAS")"""
 
-"""synth_compas = {}
+
+print("SYNTH COMPAS START")
+synth_compas = {}
 response_recid = "two_year_recid"
  
 for miss in ['age_factor_greater_than_45', "crime_factor"]:#, 'priors_count', "is_Caucasian", "gender_factor"]:
@@ -54,7 +56,7 @@ for miss in ['age_factor_greater_than_45', "crime_factor"]:#, 'priors_count', "i
         
 
         
-    
+print("SIMPLE SYNTHETIC START")
 synth_simple = {}
 response_synth = "y"
 sensitive = "x_1"
@@ -69,8 +71,10 @@ for miss in ["x_2", "x_5"]:
         with open(Path(savepath+"simple.json"), 'w') as f:
             json.dump(synth_simple, f, indent=1)
     except:
-        print("COULDNT SAVE SIMPLE SYNTH")"""
+        print("COULDNT SAVE SIMPLE SYNTH")
     
+
+print("ADULT START")
 response_adult = "income"    
 adult_full = {}
 for miss in ["marital-status", "gender"]:
@@ -78,13 +82,13 @@ for miss in ["marital-status", "gender"]:
         if miss == sensitive:
             continue
         try:
-            adult = utils_clean.run(response_adult, miss, sensitive, models = ["log_reg", "knn", "rf_cat"], dataset = "adult", n_runs = runs, robust=True, with_mcar=True)
+            adult_data = utils_clean.run(response_adult, miss, sensitive, models = ["log_reg", "knn", "rf_cat"], dataset = "adult", n_runs = runs, robust=True, with_mcar=True)
         except Exception as e:
             print("Failed on adult at " + miss + " "+ sensitive + " with error: ", e)
-        adult_full[miss+"|"+sensitive] = adult
+        adult_full[miss+"|"+sensitive] = adult_data
 
         try:
             with open(Path(savepath+"adult.json"), 'w') as f:
-                json.dump(adult, f, indent=1)
+                json.dump(adult_full, f, indent=1)
         except:
             print("COULDNT SAVE ADULT")
