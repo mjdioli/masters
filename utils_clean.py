@@ -189,7 +189,6 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
             alpha = SIMPLE_ALPHA
         elif dataset =="adult":
             data = utils.load_adult()
-            raise NotImplementedError("FOR THE FUTURE")
         elif dataset == "recid_synth":
             data = utils.load_synthetic()
             alpha = RECID_ALPHA

@@ -11,7 +11,7 @@ if not os.path.isdir(Path("final_experiment/")):
     
 import json
 
-runs = 10
+runs = 4
 
 
 
@@ -36,10 +36,10 @@ for rob in [True, False]:
 except:
     print("COULDNT SAVE COMPAS")"""
 
-synth_compas = {}
+"""synth_compas = {}
 response_recid = "two_year_recid"
  
-for miss in ['priors_count', 'age_factor_greater_than_45', "crime_factor"]:#, "is_Caucasian", "gender_factor"]:
+for miss in ['age_factor_greater_than_45', "crime_factor"]:#, 'priors_count', "is_Caucasian", "gender_factor"]:
     for sensitive in ["is_Caucasian", "gender_factor"]:
         try:
             synth_comp= utils_clean.run(response_recid, miss, sensitive, models = ["log_reg", "knn", "rf_cat"], dataset = "recid_synth", n_runs = runs, robust=True, with_mcar=True)
@@ -69,19 +69,19 @@ for miss in ["x_2", "x_5"]:
         with open(Path(savepath+"simple.json"), 'w') as f:
             json.dump(synth_simple, f, indent=1)
     except:
-        print("COULDNT SAVE SIMPLE SYNTH")
+        print("COULDNT SAVE SIMPLE SYNTH")"""
     
-    
-adult = {}
+response_adult = "income"    
+adult_full = {}
 for miss in ["marital-status", "gender"]:
     for sensitive in ["gender", "race"]:
         if miss == sensitive:
             continue
         try:
-            adult = utils_clean.run(response_recid, miss, sensitive, models = ["log_reg", "knn", "rf_cat"], dataset = "adult", n_runs = runs, robust=True, with_mcar=True)
+            adult = utils_clean.run(response_adult, miss, sensitive, models = ["log_reg", "knn", "rf_cat"], dataset = "adult", n_runs = runs, robust=True, with_mcar=True)
         except Exception as e:
             print("Failed on adult at " + miss + " "+ sensitive + " with error: ", e)
-        synth_simple[miss+"|"+sensitive] = adult
+        adult_full[miss+"|"+sensitive] = adult
 
         try:
             with open(Path(savepath+"adult.json"), 'w') as f:
