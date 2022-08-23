@@ -15,7 +15,7 @@ runs = 10
 
 
 
-compas = {}
+"""compas = {}
 response_recid = "two_year_recid"
 for rob in [True, False]:
     for miss in ["priors_count",'age_factor_Greater than 45', "crime_factor"]:#, "is_Caucasian", "gender_factor"]:
@@ -29,7 +29,7 @@ for rob in [True, False]:
                 with open(Path(savepath+"compas.json"), 'w') as f:
                     json.dump(compas, f, indent=1)
             except:
-                print("COULDNT SAVE COMPAS")
+                print("COULDNT SAVE COMPAS")"""
 """try:
     with open(Path(savepath+".json"), 'w') as f:
         json.dump(compas, f, indent=1)
