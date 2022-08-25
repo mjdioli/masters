@@ -33,7 +33,7 @@ MODELS = {"log_reg": LogisticRegression(random_state=0, max_iter=500),
           "rf_cat": RandomForestClassifier(max_depth=4, random_state=0)}
 
 #IMPUTATIONS = ["fair_reg_995", "cca", "fair_reg_985", "mean", "mice_def", "coldel"]# , "reg"]
-IMPUTATIONS = ["fair_reg_95", "fair_reg_50", "log_reg", "cca", "mean", "mice_def", "coldel"]# , "reg"]
+IMPUTATIONS = ["fair_reg_50", "log_reg", "cca", "mean", "mice_def", "coldel"]# , "reg"]
 #IMPUTATIONS = ["cca", "mean"]#, "mice_def", "coldel"]# , "reg"]
 METRICS = ["spd", "eosum", "acc", "tpr0", "tpr1", "tnr0", "tnr1", "tprd", "tnrd"]
 IMPUTATION_COMBOS = [perm[0]+"|"+perm[1] for perm in permutations(IMPUTATIONS, 2)]
@@ -46,6 +46,9 @@ IMPUTATION_COMBOS = [perm[0]+"|"+perm[1] for perm in permutations(IMPUTATIONS, 2
 RECID_ALPHA = [1000, 4.0, 3.693, 2.84,1.94, 1.033]
 SIMPLE_ALPHA = [1000, 3.86, 2.96, 1.94,0.979, 0.1]
 ADULT_ALPHA =  [1000, 7.267, 6.799, 6.23,5.5,4.92]
+#RECID_ALPHA = [1000,2.84]
+#SIMPLE_ALPHA = [1000, 1.94]
+#ADULT_ALPHA =  [1000,6.23]
 
 
 SAVEPATH = "experiments_final/"
@@ -178,12 +181,18 @@ def impute(dataframe,response, missing_col,sensitive_col, alpha, impute="cca"):
         
     return data
 
-def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"], dataset = "recid", n_runs = 10, robust = True, with_mcar = True):
-    full_results = {"delta": {"mar":{metr:{m:{i:[] for i in IMPUTATION_COMBOS} for m in models} for metr in METRICS},
-                              "mcar": {metr:{m:{i:[] for i in IMPUTATION_COMBOS} for m in models} for metr in METRICS}}}
+def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"], dataset = "recid", n_runs = 10, robust = True, with_mcar = True, alphas = None, imputation = None):
+    if imputation is not None:
+        imputations = imputation
+        imputation_combos = [perm[0]+"|"+perm[1] for perm in permutations(imputations, 2)]
+    else:
+        imputations = IMPUTATIONS
+        imputation_combos = IMPUTATION_COMBOS
+    full_results = {"delta": {"mar":{metr:{m:{i:[] for i in imputation_combos} for m in models} for metr in METRICS},
+                              "mcar": {metr:{m:{i:[] for i in imputation_combos} for m in models} for metr in METRICS}}}
     for run in tqdm(range(n_runs)):
-        results = {"mar": {metr: {m: {i: [] for i in IMPUTATIONS} for m in models} for metr in METRICS},
-                   "mcar": {metr: {m: {i: [] for i in IMPUTATIONS} for m in models} for metr in METRICS}}
+        results = {"mar": {metr: {m: {i: [] for i in imputations} for m in models} for metr in METRICS},
+                   "mcar": {metr: {m: {i: [] for i in imputations} for m in models} for metr in METRICS}}
         np.random.seed(run*13)
         if dataset =="simple":
             data = utils.load_synthetic("simple")
@@ -197,6 +206,8 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
         else:
             data = utils.load_compas_alt()
             alpha = RECID_ALPHA
+        if alphas is not None:
+            alpha = alphas
         
         train = data["train"]
         test = data["test"]
@@ -213,7 +224,7 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
             data_mar_missing = data_remover_cat(
                     train, missing_col, alph, noise, missingness="mar", robust = robust)
             #print(data_mcar_missing.columns)
-            for imp in IMPUTATIONS:  # , "reg"]:
+            for imp in imputations:  # , "reg"]:
                 """if imp =="fair_reg_95" or imp =="cca":
                     print(imp)"""
                 #if missing_pct !=0:
@@ -247,7 +258,6 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
                         results["mcar"]["tnr1"][m][imp].append(cf_1["Predicted false"][1])
                         results["mcar"]["tprd"][m][imp].append(abs(cf_1["Predicted true"][0] - cf_0["Predicted true"][0]))
                         results["mcar"]["tnrd"][m][imp].append(abs(cf_1["Predicted false"][1]-cf_0["Predicted false"][1]))
-                        
                         results[m+"_mcar_"+imp+"_" +
                                 str(missing_pct)+"_0"] = cf_0
                         results[m+"_mcar_"+imp+"_" +
@@ -316,7 +326,7 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
             continue
         for key in [str(n) for n in range(n_runs)]:
             for m in models:
-                for imp in IMPUTATIONS:
+                for imp in imputations:
                     for metric in METRICS:
                         temp_delta[miss+"|"+metric+"|"+m+"|"+imp] += full_results[key][miss][metric][m][imp]
                         avg[miss+"|"+metric+"|"+m+"|"+imp].append(full_results[key][miss][metric][m][imp])
