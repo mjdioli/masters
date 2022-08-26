@@ -93,10 +93,14 @@ def sigmoid(x, alpha):
     sig = 1 / (1 + z)
     return sig
 
-def data_remover_cat(full_data, missing_col, alpha, noise, missing_pct = None, missingness="mar", robust = True):
+def data_remover_cat(full_data, response, missing_col, alpha, noise, missing_pct = None, missingness="mar", robust = True):
     # Missing_pct is in the range 0 to 100
     
     data = full_data.copy()
+    miss_r = pd.DataFrame([data.loc[data[data[missing_col]==1].index[0],:],
+                           data.loc[data[data[missing_col]==0].index[0],:],
+                           data.loc[data[data[response]==1].index[0],:],
+                           data.loc[data[data[response]==0].index[0],:]])
     if alpha >100:
         return data
     if missingness == "mar":
@@ -113,17 +117,20 @@ def data_remover_cat(full_data, missing_col, alpha, noise, missing_pct = None, m
         data.drop("miss", axis=1, inplace=True)
 
     else:
+        #print("MISSING PERCENT", missing_pct)
         mcar = np.random.binomial(n=1, p=missing_pct/100, size=len(data))
         data["miss"] = [1 if m == 1 else 0 for m in mcar]
         data[missing_col] = data[missing_col].mask(data["miss"] == 1,
                                                    other=np.nan)
         data = data.drop("miss", axis=1)
+    data = pd.concat([data,miss_r], axis = 0, ignore_index =  True)
     return data
 
 @ignore_warnings(category=ConvergenceWarning)
 def impute(dataframe,response, missing_col,sensitive_col, alpha, impute="cca"):
     #TODO add knn imputation
     data = dataframe.copy()
+    
     if alpha >100 and impute != "coldel":
         return data
     impute_split = impute.split("_")
@@ -156,7 +163,9 @@ def impute(dataframe,response, missing_col,sensitive_col, alpha, impute="cca"):
         model = LogisticRegression(random_state=0, max_iter=500)
         model.fit(x, y)
         #TODO fix when missing == 0
+        #print("ISNA SUM", data.isna().sum(), "\n",len(data),"\n", data[data[missing_col].isnull()])
         x_miss = data[data[missing_col].isnull()].drop(missing_col,axis = 1)
+        #print(len(x_miss))
         y_hat = model.predict(x_miss)
         data.loc[data[missing_col].isnull(),missing_col] = y_hat 
         
@@ -170,7 +179,7 @@ def impute(dataframe,response, missing_col,sensitive_col, alpha, impute="cca"):
         y = obs_data[missing_col]
         y_predictive = obs_data[response]
         z = obs_data[sensitive_col]
-        flr.fit(x, y, y_predictive, z, epochs = 100, 
+        flr.fit(x, y, y_predictive, z, epochs = 200, 
                         data = obs_data.drop([response, missing_col], axis = 1), missing = missing_col)
         
         x_miss = data[data[missing_col].isnull()].drop(missing_col,axis = 1)
@@ -178,10 +187,11 @@ def impute(dataframe,response, missing_col,sensitive_col, alpha, impute="cca"):
         data.loc[data[missing_col].isnull(),missing_col] = y_hat 
     else:
         raise NotImplementedError("NOT IMPLEMENTED THIS IMPUTATION")
-        
+    
+    
     return data
 
-def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"], dataset = "recid", n_runs = 10, robust = True, with_mcar = True, alphas = None, imputation = None):
+def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"], dataset = "recid", n_runs = 10, robust = True, with_mcar = True, alphas = None, missing_percentages = None, imputation = None):
     if imputation is not None:
         imputations = imputation
         imputation_combos = [perm[0]+"|"+perm[1] for perm in permutations(imputations, 2)]
@@ -197,6 +207,7 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
         if dataset =="simple":
             data = utils.load_synthetic("simple")
             alpha = SIMPLE_ALPHA
+            
         elif dataset =="adult":
             data = utils.load_adult()
             alpha = ADULT_ALPHA
@@ -208,6 +219,10 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
             alpha = RECID_ALPHA
         if alphas is not None:
             alpha = alphas
+        if missing_percentages is None:
+            miss_pct = [0, 10,25,50,75, 90]
+        else:
+            miss_pct = missing_percentages
         
         train = data["train"]
         test = data["test"]
@@ -216,13 +231,15 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
         
         noise = np.random.normal(0,0.1,size = len(train))
         
-        for alph, missing_pct in zip(alpha, [0, 5,10,25,50,75]):
-            #print(missing_pct)
+        for alph, missing_pct in zip(alpha, miss_pct):
+            #print("MISSING PERCENT FIRST",miss_pct, missing_pct)
             if with_mcar:
                 data_mcar_missing = data_remover_cat(
-                        train, missing_col, alph, noise, missing_pct = missing_pct, missingness="mcar", robust = robust)
+                        train, response, missing_col, alph, noise, missing_pct = missing_pct, missingness="mcar", robust = robust)
             data_mar_missing = data_remover_cat(
-                    train, missing_col, alph, noise, missingness="mar", robust = robust)
+                    train, response, missing_col, alph, noise, missingness="mar", robust = robust)
+            #print("PERCENT MISSING mcar", 1-len(data_mcar_missing.dropna())/len(train))
+            #print("PERCENT MISSING mar", 1-len(data_mar_missing.dropna())/len(train))
             #print(data_mcar_missing.columns)
             for imp in imputations:  # , "reg"]:
                 """if imp =="fair_reg_95" or imp =="cca":

@@ -14,7 +14,7 @@ import json
 runs = 10
 
 
-print("COMPAS START")
+"""print("COMPAS START")
 compas = {}
 counter = 0
 response_recid = "two_year_recid"
@@ -36,7 +36,7 @@ for rob in [True, False]:
                 with open(Path(savepath+"compas_10.json"), 'w') as f:
                     json.dump(compas, f, indent=1)
             except:
-                print("COULDNT SAVE COMPAS")
+                print("COULDNT SAVE COMPAS")"""
 """try:
     with open(Path(savepath+".json"), 'w') as f:
         json.dump(compas, f, indent=1)
@@ -53,6 +53,7 @@ for miss in ['priors_count']:#, 'age_factor_greater_than_45', "crime_factor"]:#,
         try:
             synth_comp= utils_clean.run(response_recid, miss, sensitive, models = ["log_reg", "knn", "rf_cat"], dataset = "recid_synth", n_runs = runs, robust=False, with_mcar=True)
         except Exception as e:
+            synth_comp = {}
             print("Failed on COMPAS SYNTH at " + miss + " "+ sensitive + " with error: ", e)
         synth_compas[miss+"|"+sensitive] = synth_comp
         try:
@@ -71,6 +72,7 @@ for miss in ["x_2", "x_5"]:
     try:
         simple = utils_clean.run(response_synth, miss, sensitive, models = ["log_reg", "knn", "rf_cat"], dataset = "simple", n_runs = runs, robust=False, with_mcar=True)
     except Exception as e:
+        simple = {}
         print("Failed on simple synth at " + miss + " "+ sensitive + " with error: ", e)
     synth_simple[miss+"|"+sensitive] = simple
 
@@ -91,6 +93,7 @@ for miss in ["marital-status", "gender"]:
         try:
             adult_data = utils_clean.run(response_adult, miss, sensitive, models = ["log_reg", "knn", "rf_cat"], dataset = "adult", n_runs = runs, robust=False, with_mcar=True)
         except Exception as e:
+            adult = {}
             print("Failed on adult at " + miss + " "+ sensitive + " with error: ", e)
         adult_full[miss+"|"+sensitive] = adult_data
 
