@@ -47,23 +47,23 @@ except:
 print("SYNTH COMPAS START")
 synth_compas = {}
 response_recid = "two_year_recid"
- 
-for miss in ['priors_count']:#, 'age_factor_greater_than_45', "crime_factor"]:#, 'priors_count', "is_Caucasian", "gender_factor"]:
-    for sensitive in ["is_Caucasian"]:#, "gender_factor"]:
-        try:
-            synth_comp= utils_clean.run(response_recid, miss, sensitive, models = ["log_reg", "knn", "rf_cat"], dataset = "recid_synth", n_runs = runs, robust=False, with_mcar=True)
-        except Exception as e:
-            synth_comp = {}
-            print("Failed on COMPAS SYNTH at " + miss + " "+ sensitive + " with error: ", e)
-        synth_compas[miss+"|"+sensitive] = synth_comp
-        try:
-            with open(Path(savepath+"synth_compas_10.json"), 'w') as f:
-                json.dump(synth_compas, f, indent=1)
-        except:
-            print("COULDNT SAVE SYNTH COMPAS")
-        
+for rob in [True, False]:
+    for miss in ['priors_count']:#, 'age_factor_greater_than_45', "crime_factor"]:#, 'priors_count', "is_Caucasian", "gender_factor"]:
+        for sensitive in ["is_Caucasian", "gender_factor"]:
+            try:
+                synth_comp= utils_clean.run(response_recid, miss, sensitive, models = ["log_reg", "knn", "rf_cat"], dataset = "recid_synth", n_runs = runs, robust=rob, with_mcar=True)
+            except Exception as e:
+                synth_comp = {}
+                print("Failed on COMPAS SYNTH at " + miss + " "+ sensitive + " with error: ", e)
+            synth_compas[miss+"|"+sensitive] = synth_comp
+            try:
+                with open(Path(savepath+"synth_compas_10.json"), 'w') as f:
+                    json.dump(synth_compas, f, indent=1)
+            except:
+                print("COULDNT SAVE SYNTH COMPAS")
+            
 
-        
+"""        
 print("SIMPLE SYNTHETIC START")
 synth_simple = {}
 response_synth = "y"
@@ -101,4 +101,4 @@ for miss in ["marital-status", "gender"]:
             with open(Path(savepath+"adult_10.json"), 'w') as f:
                 json.dump(adult_full, f, indent=1)
         except:
-            print("COULDNT SAVE ADULT")
+            print("COULDNT SAVE ADULT")"""

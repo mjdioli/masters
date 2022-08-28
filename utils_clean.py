@@ -173,8 +173,9 @@ def impute(dataframe,response, missing_col,sensitive_col, alpha, impute="cca"):
         flr = FairLogisticRegression(fairness_metric = "eo_sum",lam = int(impute_split[-1])/100)
         obs_data = data.dropna()
         
-        flr.pre_fit(obs_data.drop(missing_col, axis = 1), obs_data[missing_col], epochs = 300)
-        flr.fit_predicitve(obs_data.drop(response, axis = 1), obs_data[response], epochs=100)
+        #Old params 300, 100, 200 ( used to be 100)
+        flr.pre_fit(obs_data.drop(missing_col, axis = 1), obs_data[missing_col], epochs = 500)
+        flr.fit_predicitve(obs_data.drop(response, axis = 1), obs_data[response], epochs=250)
         x = obs_data.drop(missing_col, axis = 1)
         y = obs_data[missing_col]
         y_predictive = obs_data[response]
@@ -239,7 +240,7 @@ def run(response, missing_col, sensitive, models = ["log_reg", "rf_cat", "knn"],
             data_mar_missing = data_remover_cat(
                     train, response, missing_col, alph, noise, missingness="mar", robust = robust)
             #print("PERCENT MISSING mcar", 1-len(data_mcar_missing.dropna())/len(train))
-            #print("PERCENT MISSING mar", 1-len(data_mar_missing.dropna())/len(train))
+            print("PERCENT MISSING mar", 1-len(data_mar_missing.dropna())/len(train))
             #print(data_mcar_missing.columns)
             for imp in imputations:  # , "reg"]:
                 """if imp =="fair_reg_95" or imp =="cca":
